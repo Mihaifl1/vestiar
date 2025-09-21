@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – poziții din cod + coordonate mouse</title>
+<title>Vestiar – poziții din cod + coordonate mouse (swing up/down)</title>
 <style>
   :root{
     --bg:#0b1220; --wall:#e5e7eb;
@@ -22,7 +22,7 @@
   .legend .o{background:var(--open)}
   .legend .p{background:var(--nopower)}
 
-  /* Canvas-ul planului: imagine integrală + overlay absolut */
+  /* Plan: imagine integrală + overlay absolut */
   .plan{
     position:relative; width:100%;
     border:10px solid var(--wall); border-radius:12px; overflow:hidden;
@@ -30,10 +30,10 @@
     user-select:none;
   }
   .plan-img{
-    display:block; width:100%; height:auto; /* imaginea e integrală, scalată proporțional */
+    display:block; width:100%; height:auto; /* NU se taie – se scalează proporțional */
   }
   .overlay{
-    position:absolute; inset:0; pointer-events:auto; /* stratul de deasupra imaginii */
+    position:absolute; inset:0; pointer-events:auto;
   }
 
   /* HUD coordonate */
@@ -68,15 +68,20 @@
     text-shadow:0 1px 2px rgba(0,0,0,.5)
   }
 
-  /* Balamaua controlează poziția elementelor în grup */
+  /* Balamaua */
   .door[data-hinge="left"] .hinge{ left:-6px }
   .door[data-hinge="right"] .hinge{ right:-6px }
   .door[data-hinge="left"]  .leaf{ left:0;  transform-origin:left  center }
   .door[data-hinge="right"] .leaf{ right:0; transform-origin:right center }
 
-  /* DESCHIS = rotație în afară față de balama */
-  .door[data-hinge="left"].open  .leaf{ transform: rotate(92deg);  background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"].open .leaf{ transform: rotate(-92deg); background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  /* DESCHIS = rotație în AFARĂ: diferențiem jos/sus (swing) */
+  /* stânga: jos/sus */
+  .door[data-hinge="left"][data-swing="down"].open .leaf{ transform: rotate(92deg);  background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="left"][data-swing="up"].open   .leaf{ transform: rotate(-92deg); background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  /* dreapta: jos/sus */
+  .door[data-hinge="right"][data-swing="down"].open .leaf{ transform: rotate(-92deg); background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="right"][data-swing="up"].open   .leaf{ transform: rotate(92deg);  background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+
   .door.nopower .leaf{ background:var(--nopower) }
 </style>
 </head>
@@ -99,12 +104,12 @@
 
     <!-- Overlay pt. uși -->
     <div class="overlay" id="overlay">
-      <div class="door" id="d1" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
-      <div class="door" id="d2" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
-      <div class="door" id="d3" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
-      <div class="door" id="d4" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
-      <div class="door" id="d5" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
-      <div class="door" id="d6" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+      <div class="door" id="d1" data-hinge="left"  data-swing="down"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
+      <div class="door" id="d2" data-hinge="left"  data-swing="down"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
+      <div class="door" id="d3" data-hinge="left"  data-swing="down"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
+      <div class="door" id="d4" data-hinge="right" data-swing="down"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
+      <div class="door" id="d5" data-hinge="right" data-swing="down"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
+      <div class="door" id="d6" data-hinge="right" data-swing="down"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
     </div>
   </div>
 </div>
@@ -112,17 +117,18 @@
 <script>
 /* =======================
    1) CONFIG – MODIFICĂ AICI
-   x, y = procente din overlay (0–100)
-   a    = unghi (grade)
+   x, y  = procente (0–100) din overlay
+   a     = unghi (grade)
    hinge = 'left' | 'right'
+   swing = 'down' | 'up'  (sensul deschiderii)
 ======================= */
 const CONFIG = {
-  d1: { x:  110, y: 127, a: 0, hinge:'left'  },
-  d2: { x:  2, y: 34, a:   0, hinge:'left'  },
-  d3: { x:  2, y: 56, a:   0, hinge:'left'  },
-  d4: { x: 92, y: 20, a: 180, hinge:'right' },
-  d5: { x: 92, y: 45, a: 180, hinge:'right' },
-  d6: { x: 92, y: 70, a: 180, hinge:'right' }
+  d1: { x:  10, y: 27, a:   0, hinge:'left',  swing:'up'   }, // Ușa 1 se deschide în SUS
+  d2: { x:   2, y: 34, a:   0, hinge:'left',  swing:'down' },
+  d3: { x:   2, y: 56, a:   0, hinge:'left',  swing:'down' },
+  d4: { x:  92, y: 20, a: 180, hinge:'right', swing:'down' },
+  d5: { x:  92, y: 45, a: 180, hinge:'right', swing:'down' },
+  d6: { x:  92, y: 70, a: 180, hinge:'right', swing:'down' }
 };
 /* ======================= */
 
@@ -144,16 +150,20 @@ document.querySelectorAll('.door').forEach(el=>{
   });
 });
 
-/* 3) Aplică poziții din CONFIG (în procente) */
+/* 3) Aplică poziții din CONFIG (în procente) + hinge + swing */
 function applyConfig(){
   Object.keys(CONFIG).forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
-    const {x,y,a,hinge} = CONFIG[id];
-    el.style.setProperty('--x', (x||0) + '%');
-    el.style.setProperty('--y', (y||0) + '%');
-    el.style.setProperty('--a', (a||0));
+    const {x,y,a,hinge,swing} = CONFIG[id];
+    // protecție: clamp 0..100 ca să nu „iasă” din overlay dacă ai valori >100
+    const cx = Math.max(0, Math.min(100, Number(x)||0));
+    const cy = Math.max(0, Math.min(100, Number(y)||0));
+    el.style.setProperty('--x', cx + '%');
+    el.style.setProperty('--y', cy + '%');
+    el.style.setProperty('--a', (Number(a)||0));
     if(hinge) el.dataset.hinge = hinge;
+    el.dataset.swing = (swing==='up' ? 'up' : 'down'); // implicit down
   });
 }
 
@@ -177,22 +187,16 @@ overlay.addEventListener('mousemove', updateHud);
 
 /* Click pe overlay => copiază în clipboard o linie de CONFIG cu coordonatele */
 overlay.addEventListener('click', (e)=>{
-  // nu declanșăm când ai dat click pe o ușă
-  if (e.target.closest('.door')) return;
-
+  if (e.target.closest('.door')) return; // ignoră dacă ai dat click pe o ușă
   const rect = overlay.getBoundingClientRect();
   const x = ((e.clientX - rect.left) / rect.width ) * 100;
   const y = ((e.clientY - rect.top ) / rect.height) * 100;
-  const line = `{ x: ${x.toFixed(1)}, y: ${y.toFixed(1)}, a: 0, hinge:'left' }`;
-
-  // copie în clipboard
+  const line = `{ x: ${x.toFixed(1)}, y: ${y.toFixed(1)}, a: 0, hinge:'left', swing:'down' }`;
   const txt = `// INSEREAZĂ ÎN CONFIG:\n${line}`;
   navigator.clipboard?.writeText(txt).then(()=>{
     hud.innerHTML = `✅ Copiat: <code>${line}</code>`;
     setTimeout(()=>{ hud.innerHTML = `X: <code>0%</code> &nbsp; Y: <code>0%</code> &nbsp; <span id="px">(0×0 px)</span>`; }, 1800);
-  }).catch(()=>{
-    alert(txt);
-  });
+  }).catch(()=>{ alert(txt); });
 });
 
 /* Inițializează */
@@ -204,9 +208,3 @@ applyConfig();
 </script>
 </body>
 </html>
-
-
-
-
-
-
