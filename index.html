@@ -10,7 +10,7 @@
     --bg:#0b1220; --wall:#e5e7eb;
     --closed:#22c55e;  /* verde  = ÎNCHIS/LOCKED */
     --open:#ef4444;    /* roșu   = DESCHIS/UNLOCKED */
-    --nopower:#6b7280; /* gri    = Fără alimentare */
+    --nopower:#6b7280; /* gri    = Fără alimentare / OFFLINE */
     --hinge:#94a3b8;
   }
   *{box-sizing:border-box}
@@ -52,7 +52,7 @@
   .door .leaf{
     position:absolute; top:8px; width:72px; height:10px;
     border:2px solid #000; border-radius:6px; background:var(--closed);
-    transition: transform .25s ease, background .2s ease, box-shadow .2s ease;
+    transition: transform .25s ease, background .2s ease, box-shadow .2s ease, opacity .2s ease;
     transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
   }
   .door .label{
@@ -60,7 +60,7 @@
     font-size:12px; font-weight:bold;
     color:#aad1ff;
     text-shadow:0 1px 2px rgba(0,0,0,.5);
-    white-space:pre; /* permite \n */
+    white-space:pre;
   }
 
   .door[data-hinge="left"] .hinge{ left:-6px }
@@ -74,20 +74,25 @@
   .door[data-hinge="right"][data-swing="down"].open .leaf{ transform: rotate(-60deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
   .door[data-hinge="right"][data-swing="up"].open   .leaf{ transform: rotate(60deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
 
-  .door.nopower .leaf{ background:var(--nopower) }
+  /* GRI pentru OFFLINE sau fără alimentare */
+  .door.nopower .leaf,
+  .door.offline .leaf{ background:var(--nopower); }
+
+  /* opțional: arată vizual că nu se poate apăsa când e offline */
+  .door.offline { cursor: not-allowed; opacity: 0.85; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Vestiar – control uși (MQTT)</h1>
-<a href="programari.html" target="_blank" style="margin-left:8px;background:#0f172a;color:#fff;border:1px solid #334155;border-radius:8px;padding:6px 10px;text-decoration:none">
-  ↗ Programări (orar)
-</a>
+  <a href="programari.html" target="_blank" style="margin-left:8px;background:#0f172a;color:#fff;border:1px solid #334155;border-radius:8px;padding:6px 10px;text-decoration:none">
+    ↗ Programări (orar)
+  </a>
 
   <div class="legend">
     <span class="c">ÎNCHIS (verde)</span>
     <span class="o">DESCHIS (roșu)</span>
-    <span class="p">Fără alimentare (gri)</span>
+    <span class="p">Fără alimentare / OFFLINE (gri)</span>
     <span class="conn" id="conn"><span class="dot"></span><span id="connText">Se conectează la MQTT…</span></span>
   </div>
 
@@ -95,12 +100,12 @@
     <img id="planImg" class="plan-img" src="vestiar.jpg" alt="Plan Vestiar">
     <div class="overlay" id="overlay">
       <!-- UȘI – poziții inițiale (le ajustezi în CONFIG mai jos) -->
-      <div class="door" id="d1" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
-      <div class="door" id="d2" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
-      <div class="door" id="d3" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
-      <div class="door" id="d4" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
-      <div class="door" id="d5" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
-      <div class="door" id="d6" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+      <div class="door offline" id="d1" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
+      <div class="door offline" id="d2" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
+      <div class="door offline" id="d3" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
+      <div class="door offline" id="d4" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
+      <div class="door offline" id="d5" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
+      <div class="door offline" id="d6" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
     </div>
   </div>
 </div>
@@ -108,7 +113,6 @@
 <script>
 /* ===========================
    1) CONFIG poziții (procente)
-   – păstrate ca în varianta ta „fixă”
 =========================== */
 const CONFIG = {
   d1: { x: 137,  y: 220,  a: 0 },
@@ -118,10 +122,6 @@ const CONFIG = {
   d5: { x: 1100, y: 3000, a: 90 },
   d6: { x: 1100, y: 3360, a: 90 }
 };
-// NOTĂ: aici valorile sunt tratate ca PROCENTE.
-// Dacă sunt prea mari, redu-le (ex: 13.7 în loc de 137).
-
-/* Poziționare din CONFIG */
 function applyConfig(){
   Object.keys(CONFIG).forEach(id=>{
     const el = document.getElementById(id);
@@ -151,12 +151,10 @@ const connText  = document.getElementById('connText');
 client.on('connect', () => {
   connBadge.classList.add('ok');
   connText.textContent = 'MQTT conectat';
-  // abonare la toate status-urile
   [1,2,3,4,5,6].forEach(i=>{
     client.subscribe(`locker/${i}/status`, {qos:0});
   });
 });
-
 client.on('reconnect', ()=>{ connBadge.classList.remove('ok'); connText.textContent = 'Reconectare MQTT…'; });
 client.on('close', ()=>{ connBadge.classList.remove('ok'); connText.textContent = 'MQTT deconectat'; });
 client.on('error', (e)=>{ connBadge.classList.remove('ok'); connText.textContent = 'Eroare MQTT'; console.error(e); });
@@ -171,30 +169,48 @@ const DOORS = {
   6: { el: document.getElementById('d6'), cmd: 'locker/6/cmd' },
 };
 
-/* stare curentă primită de la ESP */
+/* stare + „last seen” pentru offline */
+const OFFLINE_MS = 20000; // după 20s fără status -> offline
 const state = {
-  1:{lock:'LOCKED',door:'CLOSED',power:'ON'},
-  2:{lock:'LOCKED',door:'CLOSED',power:'ON'},
-  3:{lock:'LOCKED',door:'CLOSED',power:'ON'},
-  4:{lock:'LOCKED',door:'CLOSED',power:'ON'},
-  5:{lock:'LOCKED',door:'CLOSED',power:'ON'},
-  6:{lock:'LOCKED',door:'CLOSED',power:'ON'},
+  1:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
+  2:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
+  3:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
+  4:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
+  5:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
+  6:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
 };
 
+function setOffline(id, yes){
+  const d = DOORS[id]; if(!d) return;
+  d.el.classList.toggle('offline', !!yes);
+  if (yes) {
+    // textul etichetei subliniază offline
+    const label = d.el.querySelector('.label');
+    label.textContent = `Ușa ${id}\nOFFLINE`;
+    d.el.classList.remove('open'); // nu animăm
+  }
+}
+
 function renderDoor(id){
-  const s = state[id];
-  const d = DOORS[id];
-  if(!d) return;
+  const s = state[id]; const d = DOORS[id]; if(!d) return;
   const el = d.el;
-  // reset clase
-  el.classList.remove('open','nopower');
-  // power
-  if(s.power === 'OFF'){ el.classList.add('nopower'); }
-  // lock => animatia canatului (open = UNLOCKED)
-  if(s.lock === 'UNLOCKED'){ el.classList.add('open'); }
-  // label text
-  const label = el.querySelector('.label');
-  label.textContent = `Ușa ${id}\n${s.lock} / ${s.door}${s.power==='OFF' ? ' / NOPWR' : ''}`;
+
+  // offline?
+  const isOff = (Date.now() - s.last > OFFLINE_MS);
+  setOffline(id, isOff);
+
+  // reset
+  el.classList.remove('nopower');
+  if (s.power === 'OFF') el.classList.add('nopower');
+
+  // open anim
+  el.classList.toggle('open', s.lock === 'UNLOCKED' && !isOff);
+
+  // label
+  if(!isOff){
+    const label = el.querySelector('.label');
+    label.textContent = `Ușa ${id}\n${s.lock} / ${s.door}${s.power==='OFF' ? ' / NOPWR' : ''}`;
+  }
 }
 
 /* primire status JSON */
@@ -202,40 +218,43 @@ client.on('message', (topic, payload) => {
   try{
     const txt = payload.toString();
     const data = JSON.parse(txt);
-    // extrage id: locker/X/status
-    const parts = topic.split('/');
+    const parts = topic.split('/');   // locker/X/status
     const id = parseInt(parts[1],10);
     if(!state[id]) return;
-    // actualizează stare (cu fallback)
+
     if(data.lock)  state[id].lock  = data.lock.toUpperCase();
     if(data.door)  state[id].door  = data.door.toUpperCase();
     if(data.power) state[id].power = data.power.toUpperCase();
+    state[id].last = Date.now();      // am primit ceva acum
+
     renderDoor(id);
   }catch(e){
     console.warn('Status invalid:', topic, payload.toString(), e);
   }
 });
 
-/* click pe ușă => trimite LOCK/UNLOCK
-   - dacă power OFF, ignorăm comanda
-   - logica toggle: dacă e LOCKED => UNLOCK, altfel LOCK
-*/
+/* click pe ușă => LOCK/UNLOCK (numai dacă NU e offline și NU e fără alimentare) */
 Object.keys(DOORS).forEach(k=>{
   const id = parseInt(k,10);
   const {el, cmd} = DOORS[id];
   el.addEventListener('click', ()=>{
     const s = state[id];
-    if(s.power === 'OFF'){ console.log(`Ușa ${id}: fără alimentare, ignor comanda.`); return; }
+    const offline = (Date.now() - s.last > OFFLINE_MS);
+    if (offline) { console.log(`Ușa ${id}: OFFLINE, ignor comanda.`); return; }
+    if (s.power === 'OFF'){ console.log(`Ușa ${id}: fără alimentare, ignor comanda.`); return; }
     const next = (s.lock === 'LOCKED') ? 'UNLOCK' : 'LOCK';
     client.publish(cmd, next);
     console.log(`Trimis ${next} -> ${cmd}`);
-    // opțional: optimist până vine statusul
-    // s.lock = (next==='LOCK' ? 'LOCKED' : 'UNLOCKED'); renderDoor(id);
   });
 });
 
-/* randare inițială */
-[1,2,3,4,5,6].forEach(renderDoor);
+/* watchdog: marchează offline ușile care nu mai trimit status */
+setInterval(()=>{
+  [1,2,3,4,5,6].forEach(id=> renderDoor(id));
+}, 2000);
+
+/* randare inițială (toate offline până primim ceva) */
+[1,2,3,4,5,6].forEach(id=> { setOffline(id, true); renderDoor(id); });
 </script>
 </body>
 </html>
