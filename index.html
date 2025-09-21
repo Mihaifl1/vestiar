@@ -1,21 +1,93 @@
 <!doctype html>
 <html lang="ro">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Test GitHub Pages</title>
-  <style>
-    body {
-      background: #0b1220;
-      color: #22c55e;
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding-top: 50px;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Vestiar – 6 uși</title>
+<style>
+  :root{
+    --ok:#22c55e;      /* locked  = verde  */
+    --bad:#ef4444;     /* unlocked= roșu   */
+    --np:#6b7280;      /* nopower = gri    */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0b1220;color:#fff}
+  .wrap{max-width:980px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0 0 10px}
+  .legend{font-size:14px;opacity:.8;margin-bottom:10px}
+  .legend span{display:inline-block;padding:2px 8px;border-radius:6px;margin-right:6px}
+  .legend .l{background:var(--ok)} .legend .u{background:var(--bad)} .legend .p{background:var(--np)}
+  .plan{
+    position:relative;
+    width:100%;
+    aspect-ratio: 4 / 3;              /* important: dă înălțime containerului */
+    background:#111 url("vestiar.jpg") center/cover no-repeat;
+    border:2px solid #333;border-radius:12px;overflow:hidden;
+  }
+  .door{
+    position:absolute; z-index:2;
+    width:74px;height:34px; line-height:34px; text-align:center;
+    font-size:12px; font-weight:bold; border-radius:6px; cursor:pointer;
+    transition:transform .1s ease, background .25s ease;
+    user-select:none;
+  }
+  .door:active{ transform:scale(.96) }
+  .locked{background:var(--ok)}
+  .unlocked{background:var(--bad)}
+  .nopower{background:var(--np)}
+</style>
 </head>
 <body>
-  <h1>✅ GitHub Pages funcționează!</h1>
-  <p>Aceasta este o pagină de test simplă.</p>
+<div class="wrap">
+  <h1>Control vestiar (6 uși)</h1>
+  <div class="legend">
+    <span class="l">Încuiată</span>
+    <span class="u">Descuiată</span>
+    <span class="p">Fără alimentare</span>
+  </div>
+
+  <div class="plan" id="plan">
+    <!-- Poziții aproximative; ajustează procentele după cum vrei -->
+    <div id="door1" class="door locked"   style="top:18%; left:10%">Ușa 1</div>
+    <div id="door2" class="door locked"   style="top:18%; left:40%">Ușa 2</div>
+    <div id="door3" class="door locked"   style="top:18%; left:70%">Ușa 3</div>
+    <div id="door4" class="door locked"   style="top:62%; left:10%">Ușa 4</div>
+    <div id="door5" class="door locked"   style="top:62%; left:40%">Ușa 5</div>
+    <div id="door6" class="door locked"   style="top:62%; left:70%">Ușa 6</div>
+  </div>
+</div>
+
+<script>
+/* Versiune locală (fără MQTT)
+   - click = comută ÎNCUIAT / DESCUIAT
+   - shift+click pe o ușă = marchează FĂRĂ ALIMENTARE
+*/
+(function(){
+  const toggleDoor = (el, e) => {
+    el.classList.remove('locked','unlocked','nopower');
+    if (e && e.shiftKey) {            // SHIFT+click => nopower
+      el.classList.add('nopower');
+      return;
+    }
+    const wasLocked = el.dataset.state === 'locked';
+    const next = wasLocked ? 'unlocked' : 'locked';
+    el.dataset.state = next;
+    el.classList.add(next);
+  };
+
+  document.querySelectorAll('.door').forEach(el=>{
+    el.dataset.state = 'locked';
+    el.addEventListener('click', e => toggleDoor(el, e));
+  });
+})();
+</script>
+
+<!-- ==== NOTĂ: MQTT (opțional) ====
+1) Pentru varianta cu MQTT, adaugă scriptul:
+   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+2) Apoi înlocuiește scriptul de mai sus cu cel pe care l-am făcut anterior (broker emqx,
+   topics locker/x/status și locker/x/cmd). Structura div-urilor și id-urile sunt aceleași,
+   deci se potrivește direct.
+==================================== -->
 </body>
 </html>
