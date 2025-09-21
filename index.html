@@ -59,7 +59,8 @@
     transition: transform .35s ease, background .25s ease, box-shadow .25s ease;
     transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
   }
-  .door.drag .leaf{ transition:none !important; box-shadow:none } /* fără frână la drag */
+  /* fără frână în timpul drag-ului */
+  .door.drag .leaf{ transition:none !important; box-shadow:none }
 
   .door .label{
     position:absolute; left:0; top:-14px; font-size:12px; font-weight:bold;
@@ -197,7 +198,7 @@ function setAngle(el, val){ el.style.setProperty('--a', String(val)) }
 function getXY(el){
   const sx = getComputedStyle(el).getPropertyValue('--x').trim();
   const sy = getComputedStyle(el).getPropertyValue('--y').trim();
-  return { x: parseFloat(sx), y: parseFloat(sy) };
+  return { x: parseFloat(sx) || 0, y: parseFloat(sy) || 0 };
 }
 function setXY(el, xPerc, yPerc){
   el.style.setProperty('--x', xPerc + '%');
@@ -240,20 +241,34 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-/* ===== Drag în modul Edit — performant (PointerEvents + rAF) ===== */
+/* ===== Drag fluid cu offset (PointerEvents + rAF) ===== */
 let dragging = false, rafId = null, rectPlan = null;
-const dragState = { clientX:0, clientY:0 };
+let dragEl = null;
+const dragState = { clientX:0, clientY:0, offXPerc:0, offYPerc:0 };
 
-function startDrag(){
-  if(!editor.current) return;
-  dragging = true;
-  editor.current.classList.add('drag');
+function getPercFromClient(clientX, clientY){
+  const x = Math.max(0, Math.min(100, (clientX - rectPlan.left) / rectPlan.width  * 100));
+  const y = Math.max(0, Math.min(100, (clientY - rectPlan.top ) / rectPlan.height * 100));
+  return {x,y};
+}
+
+function startDrag(el, clientX, clientY){
+  dragEl = el;
   rectPlan = plan.getBoundingClientRect();
+  const cur = getXY(el);
+  const curAt = getPercFromClient(clientX, clientY);
+  // offset dintre cursor și poziția actuală a ușii (în procente)
+  dragState.offXPerc = curAt.x - cur.x;
+  dragState.offYPerc = curAt.y - cur.y;
+
+  dragging = true;
+  dragEl.classList.add('drag');
 }
 function stopDrag(){
   if(!dragging) return;
   dragging = false;
-  editor.current && editor.current.classList.remove('drag');
+  dragEl && dragEl.classList.remove('drag');
+  dragEl = null;
   rectPlan = null;
   if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
 }
@@ -263,31 +278,54 @@ function scheduleMove(clientX, clientY){
   if(rafId) return;
   rafId = requestAnimationFrame(()=>{
     rafId = null;
-    if(!dragging || !editor.current || !rectPlan) return;
-    const px = dragState.clientX - rectPlan.left;
-    const py = dragState.clientY - rectPlan.top;
-    let x = Math.max(0, Math.min(100, px / rectPlan.width  * 100));
-    let y = Math.max(0, Math.min(100, py / rectPlan.height * 100));
-    editor.current.style.setProperty('--x', x + '%');
-    editor.current.style.setProperty('--y', y + '%');
+    if(!dragging || !dragEl || !rectPlan) return;
+    const curAt = getPercFromClient(dragState.clientX, dragState.clientY);
+    // menținem offset-ul inițial: ușa urmărește cursorul 1:1
+    let nx = curAt.x - dragState.offXPerc;
+    let ny = curAt.y - dragState.offYPerc;
+    nx = Math.max(0, Math.min(100, nx));
+    ny = Math.max(0, Math.min(100, ny));
+    setXY(dragEl, nx, ny);
   });
 }
-/* Pointer Events – mouse & touch */
-plan.addEventListener('pointerdown', (e)=>{
-  if(editor.current && e.buttons === 1){
-    startDrag();
-    scheduleMove(e.clientX, e.clientY);
-    plan.setPointerCapture(e.pointerId);
-  }
+
+/* 1) Drag direct PE UȘĂ când editorul e deschis pentru acea ușă */
+document.querySelectorAll('.door').forEach(el=>{
+  el.addEventListener('pointerdown', (e)=>{
+    // doar dacă editorul e deschis pentru această ușă
+    if(editor.current === el && e.buttons === 1){
+      e.preventDefault();
+      startDrag(el, e.clientX, e.clientY);
+      el.setPointerCapture(e.pointerId);
+    }
+  });
+  el.addEventListener('pointermove', (e)=>{
+    if(dragging && dragEl===el) scheduleMove(e.clientX, e.clientY);
+  });
+  el.addEventListener('pointerup', (e)=>{
+    if(dragging && dragEl===el) stopDrag();
+  });
+  el.addEventListener('pointercancel', (e)=>{
+    if(dragging && dragEl===el) stopDrag();
+  });
 });
+
+/* 2) Drag din butonul „Trage (activ)” al editorului – prinde de oriunde pe plan */
+function uiStartDragFromEditor(){
+  if(!editor.current) return;
+  const last = editor._lastPointer || {x: window.innerWidth/2, y: window.innerHeight/2};
+  startDrag(editor.current, last.x, last.y);
+}
 plan.addEventListener('pointermove', (e)=>{
-  if(!dragging) return;
-  scheduleMove(e.clientX, e.clientY);
+  // memorăm ultima poziție (pentru butonul din editor)
+  editor._lastPointer = {x:e.clientX, y:e.clientY};
+  if(dragging) scheduleMove(e.clientX, e.clientY);
 });
 plan.addEventListener('pointerup', ()=>{ if(dragging) stopDrag(); });
 plan.addEventListener('pointercancel', stopDrag);
 
 /* Editor – acțiuni */
+const angleInput = document.getElementById('edAngle');
 editor.addEventListener('click', (e)=>{
   const act = e.target.dataset.act;
   if(!act || !editor.current) return;
@@ -298,7 +336,7 @@ editor.addEventListener('click', (e)=>{
   if(act==='rot--15'){ setAngle(el, getAngle(el)-15); angleInput.value=getAngle(el); }
   if(act==='rot+15'){ setAngle(el, getAngle(el)+15); angleInput.value=getAngle(el); }
   if(act==='rot0'){ setAngle(el, 0); angleInput.value=0; }
-  if(act==='drag'){ startDrag(); }
+  if(act==='drag'){ uiStartDragFromEditor(); }
   if(act==='center'){ setXY(el, 50, 50); }
 });
 angleInput.addEventListener('input', ()=>{
@@ -392,7 +430,7 @@ MQTT (opțional, când vei dori):
       const s = m.toString(); // 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
       for(const id in map) if(map[id].status===t) setDoorState(id, s);
     });
-    // dacă vrei publish la click, adaugă în handlerul de click:
+    // publish la click (în handlerul de click, după setDoorState):
     // client.publish(map[id].cmd, state[id]==='LOCKED' ? 'UNLOCK' : 'LOCK');
   </script>
 -->
