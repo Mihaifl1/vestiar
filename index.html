@@ -38,7 +38,7 @@
   .hud{
     position:absolute; right:10px; top:10px; z-index:10;
     background:rgba(15,23,42,.9); border:1px solid #334155; border-radius:8px;
-    padding:6px 10px; font-size:12px; white-space:nowrap
+    padding:6px 10px; font-size:12px; black-space:nowrap
   }
   .hud code{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
 
@@ -57,23 +57,26 @@
     --x: 0%; --y: 0%; --a: 0;
     transform: translate(var(--x), var(--y)) rotate(calc(var(--a) * 1deg));
     transform-origin: 0 0;
-    width: 84px; height: 44px;
+    width: 84px; height: 40px;
     cursor:pointer;
   }
   .door .hinge{
-    position:absolute; top:12px; width:8px; height:20px;
+    position:absolute; top:6px; width:8px; height:20px;
     background:var(--hinge); border-radius:4px;
   }
   .door .leaf{
-    position:absolute; top:8px; width:72px; height:28px;
+    position:absolute; top:8px; width:72px; height:10px;
     border:2px solid #000; border-radius:6px; background:var(--closed);
     transition: transform .25s ease, background .2s ease, box-shadow .2s ease;
     transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
   }
   .door .label{
-    position:absolute; left:0; top:-14px; font-size:12px; font-weight:bold;
-    text-shadow:0 1px 2px rgba(0,0,0,.5)
-  }
+  position:absolute; left:-20px; top:30px;
+  font-size:12px; font-weight:bold;
+  color: blue;                         /* ← culoarea textului */
+  text-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+
 
   .door[data-hinge="left"] .hinge{ left:-6px }
   .door[data-hinge="right"] .hinge{ right:-6px }
@@ -81,17 +84,17 @@
   .door[data-hinge="right"] .leaf{ right:0; transform-origin:right center }
 
   /* swing up/down */
-  .door[data-hinge="left"][data-swing="down"].open .leaf{ transform: rotate(92deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="left"][data-swing="up"].open   .leaf{ transform: rotate(-92deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"][data-swing="down"].open .leaf{ transform: rotate(-92deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"][data-swing="up"].open   .leaf{ transform: rotate(92deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="left"][data-swing="down"].open .leaf{ transform: rotate(60deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="left"][data-swing="up"].open   .leaf{ transform: rotate(-60deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="right"][data-swing="down"].open .leaf{ transform: rotate(-60deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="right"][data-swing="up"].open   .leaf{ transform: rotate(60deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
 
   .door.nopower .leaf{ background:var(--nopower) }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Vestiar – uși împrăștiate + coordonate mouse</h1>
+  <h1>Vestiar </h1>
   <div class="legend">
     <span class="c">ÎNCHIS (verde)</span>
     <span class="o">DESCHIS (roșu)</span>
@@ -124,12 +127,12 @@
 <script>
 /* CONFIG inițial – ușile puse aleator pe ecran */
 const CONFIG = {
-  d1: { x: 50, y: 65, a: 0,   hinge:'left',  swing:'down' },
-  d2: { x: 70, y: 25, a: 0,   hinge:'left',  swing:'down' },
-  d3: { x: 40, y: 60, a: 0,   hinge:'right', swing:'down' },
-  d4: { x: 10, y: 80, a: 0,   hinge:'right', swing:'up'   },
-  d5: { x: 85, y: 50, a: 0,   hinge:'left',  swing:'up'   },
-  d6: { x: 55, y: 35, a: 0,   hinge:'right', swing:'down' }
+  d1: { x: 137, y: 220, a: 0,   hinge:'left',  swing:'up' },
+  d2: { x: 270, y: 220, a: 0,   hinge:'left',  swing:'up' },
+  d3: { x: 430, y: 220, a: 0,   hinge:'left', swing:'up' },
+  d4: { x: 1100, y: 2700, a: 90,   hinge:'right', swing:'up'   },
+  d5: { x: 1100, y: 3000, a: 90,   hinge:'right',  swing:'up'   },
+  d6: { x: 1100, y: 3360, a: 90,   hinge:'right', swing:'up' }
 };
 
 /* stare usi */
@@ -204,4 +207,3 @@ overlay.addEventListener('click', e=>{
 </script>
 </body>
 </html>
-
