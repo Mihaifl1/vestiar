@@ -3,91 +3,152 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – 6 uși</title>
+<title>Vestiar – uși animate</title>
 <style>
   :root{
-    --ok:#22c55e;      /* locked  = verde  */
-    --bad:#ef4444;     /* unlocked= roșu   */
-    --np:#6b7280;      /* nopower = gri    */
+    --bg:#0b1220; --room:#0f172a; --wall:#e5e7eb;
+    --closed:#22c55e;   /* verde = ÎNCHIS */
+    --open:#ef4444;     /* roșu  = DESCHIS */
+    --hinge:#94a3b8;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0b1220;color:#fff}
+  body{margin:0;background:var(--bg);color:#fff;font-family:Arial,Helvetica,sans-serif}
   .wrap{max-width:980px;margin:0 auto;padding:16px}
-  h1{font-size:20px;margin:0 0 10px}
-  .legend{font-size:14px;opacity:.8;margin-bottom:10px}
-  .legend span{display:inline-block;padding:2px 8px;border-radius:6px;margin-right:6px}
-  .legend .l{background:var(--ok)} .legend .u{background:var(--bad)} .legend .p{background:var(--np)}
+  h1{font-size:20px;margin:0 0 8px}
+  .legend{font-size:14px;opacity:.9;margin-bottom:10px}
+  .legend span{display:inline-block;margin-right:10px;padding:2px 8px;border-radius:6px}
+  .legend .c{background:var(--closed)} .legend .o{background:var(--open)}
+
+  /* Camera/planul – 4:2.2 pentru un dreptunghi lat, responsive */
   .plan{
     position:relative;
     width:100%;
-    aspect-ratio: 4 / 3;              /* important: dă înălțime containerului */
-    background:#111 url("vestiar.jpg") center/cover no-repeat;
-    border:2px solid #333;border-radius:12px;overflow:hidden;
+    aspect-ratio: 4 / 2.2;
+    background:var(--room);
+    border:10px solid var(--wall);
+    border-radius:12px;
+    overflow:visible;
   }
+
+  /* Suport pentru o ușă montată pe peretele din stânga */
   .door{
-    position:absolute; z-index:2;
-    width:74px;height:34px; line-height:34px; text-align:center;
-    font-size:12px; font-weight:bold; border-radius:6px; cursor:pointer;
-    transition:transform .1s ease, background .25s ease;
-    user-select:none;
+    position:absolute;
+    left:-8px;                   /* ușa “stă” în perete */
+    width:64px; height:28px;     /* dimensiune canat */
+    transform:translateY(-50%);  /* centrare pe poziția top% */
+    cursor:pointer; user-select:none;
   }
-  .door:active{ transform:scale(.96) }
-  .locked{background:var(--ok)}
-  .unlocked{background:var(--bad)}
-  .nopower{background:var(--np)}
+  /* canatul ușii */
+  .door .leaf{
+    position:absolute; left:0; top:0;
+    width:64px; height:28px;
+    border:2px solid #000; border-radius:4px;
+    background:var(--closed);
+    transform-origin: left center;         /* balama pe stânga */
+    transition: transform .35s ease, background .25s ease, box-shadow .25s ease;
+    box-shadow:0 0 0 rgba(0,0,0,0);
+  }
+  .door .hinge{
+    position:absolute; left:-6px; top:4px; width:6px; height:20px;
+    background:var(--hinge); border-radius:4px 0 0 4px;
+  }
+  .door.open .leaf{
+    transform: rotate(-92deg);            /* deschidere în interiorul camerei */
+    background:var(--open);
+    box-shadow: 0 6px 10px rgba(0,0,0,.45);
+  }
+
+  /* eticheta deasupra ușii */
+  .door .label{
+    position:absolute; left:72px; top:50%; transform:translateY(-50%);
+    font-size:12px; font-weight:bold; white-space:nowrap; opacity:.95;
+  }
+
+  /* Poziții (procente pe înălțime) – ajustează după planul real */
+  #d1{ top:14% } #d2{ top:34% } #d3{ top:54% } #d4{ top:74% } #d5{ top:84% } #d6{ top:94% }
+  /* dacă vrei doar 3 uși, păstrezi d1–d3 și ștergi restul */
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Control vestiar (6 uși)</h1>
-  <div class="legend">
-    <span class="l">Încuiată</span>
-    <span class="u">Descuiată</span>
-    <span class="p">Fără alimentare</span>
-  </div>
+  <div class="wrap">
+    <h1>Vestiar – uși animate (click pentru a deschide/închide)</h1>
+    <div class="legend">
+      <span class="c">ÎNCUIAT / ÎNCHIS</span>
+      <span class="o">DESCUIAT / DESCHIS</span>
+      <span>Shift+Click = marchează „fără alimentare”</span>
+    </div>
 
-  <div class="plan" id="plan">
-    <!-- Poziții aproximative; ajustează procentele după cum vrei -->
-    <div id="door1" class="door locked"   style="top:18%; left:10%">Ușa 1</div>
-    <div id="door2" class="door locked"   style="top:18%; left:40%">Ușa 2</div>
-    <div id="door3" class="door locked"   style="top:18%; left:70%">Ușa 3</div>
-    <div id="door4" class="door locked"   style="top:62%; left:10%">Ușa 4</div>
-    <div id="door5" class="door locked"   style="top:62%; left:40%">Ușa 5</div>
-    <div id="door6" class="door locked"   style="top:62%; left:70%">Ușa 6</div>
+    <div class="plan" id="plan">
+      <!-- Uși pe peretele stâng (plan de sus) -->
+      <div class="door" id="d1"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
+      <div class="door" id="d2"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
+      <div class="door" id="d3"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
+      <div class="door" id="d4"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
+      <div class="door" id="d5"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
+      <div class="door" id="d6"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+    </div>
   </div>
-</div>
 
 <script>
-/* Versiune locală (fără MQTT)
-   - click = comută ÎNCUIAT / DESCUIAT
-   - shift+click pe o ușă = marchează FĂRĂ ALIMENTARE
+/* Logică simplă:
+   - click pe ușă => comută deschis/închis (cu animație)
+   - SHIFT + click => marchează „fără alimentare” (gri) – nu modifică poziția
+   - avem o API simplă: setDoorState(id, 'LOCKED'|'UNLOCKED'|'NOPOWER')
+     ca să poți conecta MQTT foarte ușor ulterior
 */
 (function(){
-  const toggleDoor = (el, e) => {
-    el.classList.remove('locked','unlocked','nopower');
-    if (e && e.shiftKey) {            // SHIFT+click => nopower
-      el.classList.add('nopower');
-      return;
-    }
-    const wasLocked = el.dataset.state === 'locked';
-    const next = wasLocked ? 'unlocked' : 'locked';
-    el.dataset.state = next;
-    el.classList.add(next);
-  };
+  const state = {}; // id -> 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
 
+  function applyVisual(doorEl, st){
+    const leaf = doorEl.querySelector('.leaf');
+    doorEl.classList.toggle('open', st==='UNLOCKED');
+    if(st==='NOPOWER'){ leaf.style.background='#6b7280'; }
+    else if(st==='UNLOCKED'){ leaf.style.background='var(--open)'; }
+    else { leaf.style.background='var(--closed)'; }
+  }
+
+  function setDoorState(id, st){
+    state[id] = st;
+    const el = document.getElementById(id);
+    if(el) applyVisual(el, st);
+  }
+
+  // inițial toate închise
+  ['d1','d2','d3','d4','d5','d6'].forEach(id=> setDoorState(id,'LOCKED'));
+
+  // click handlers
   document.querySelectorAll('.door').forEach(el=>{
-    el.dataset.state = 'locked';
-    el.addEventListener('click', e => toggleDoor(el, e));
+    el.addEventListener('click', (e)=>{
+      const id = el.id;
+      if(e.shiftKey){
+        setDoorState(id, 'NOPOWER');
+        return;
+      }
+      setDoorState(id, state[id]==='LOCKED' ? 'UNLOCKED' : 'LOCKED');
+    });
   });
+
+  // expune funcția pentru integrare MQTT (opțional)
+  window.setDoorState = setDoorState;
 })();
 </script>
 
-<!-- ==== NOTĂ: MQTT (opțional) ====
-1) Pentru varianta cu MQTT, adaugă scriptul:
+<!--
+========== Integrare MQTT (opțional) ==========
+1) Adaugă în <head>:
    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-2) Apoi înlocuiește scriptul de mai sus cu cel pe care l-am făcut anterior (broker emqx,
-   topics locker/x/status și locker/x/cmd). Structura div-urilor și id-urile sunt aceleași,
-   deci se potrivește direct.
-==================================== -->
+2) După scriptul de mai sus, folosește:
+   const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {clientId:"web_"+Math.random().toString(16).slice(2)});
+   const map = { d1:{status:"locker/1/status", cmd:"locker/1/cmd"}, ... };
+   client.on("connect",()=> Object.values(map).forEach(ch=> client.subscribe(ch.status)));
+   client.on("message",(t,m)=>{
+      for(const k in map) if(map[k].status===t){
+        const s = m.toString();           // 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
+        setDoorState(k, s);
+      }
+   });
+   // publish la click: în handler, după setDoorState(...), trimite:
+   // client.publish(map[id].cmd, state[id]==='LOCKED' ? 'LOCK' : 'UNLOCK');
+=============================================== -->
 </body>
 </html>
