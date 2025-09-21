@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – uși cu poziții din cod</title>
+<title>Vestiar – poziții din cod + coordonate mouse</title>
 <style>
   :root{
     --bg:#0b1220; --wall:#e5e7eb;
@@ -13,27 +13,41 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:#fff;font-family:Arial,Helvetica,sans-serif}
-  .wrap{max-width:3000px;margin:0 auto;padding:16px}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
   h1{font-size:20px;margin:0 0 10px}
 
-  .legend{font-size:14px;opacity:.9;margin-bottom:10px}
+  .legend{font-size:14px;opacity:.9;margin:8px 0 12px}
   .legend span{display:inline-block;margin-right:8px;padding:2px 8px;border-radius:6px}
   .legend .c{background:var(--closed)}
   .legend .o{background:var(--open)}
   .legend .p{background:var(--nopower)}
 
+  /* Canvas-ul planului: imagine integrală + overlay absolut */
   .plan{
-    position:relative;width:100%;
-    aspect-ratio: 4 / 2.2;
-    background:#0f172a url("vestiar.jpg") center/cover no-repeat;
-    border:10px solid var(--wall);border-radius:12px;overflow:hidden;
+    position:relative; width:100%;
+    border:10px solid var(--wall); border-radius:12px; overflow:hidden;
+    background:#0b1220;
     user-select:none;
   }
+  .plan-img{
+    display:block; width:100%; height:auto; /* imaginea e integrală, scalată proporțional */
+  }
+  .overlay{
+    position:absolute; inset:0; pointer-events:auto; /* stratul de deasupra imaginii */
+  }
 
-  /* Ușa = grup transformat (translate+rotate) – doar vizualizare, fără drag */
+  /* HUD coordonate */
+  .hud{
+    position:absolute; right:10px; top:10px; z-index:10;
+    background:rgba(15,23,42,.9); border:1px solid #334155; border-radius:8px;
+    padding:6px 10px; font-size:12px; white-space:nowrap
+  }
+  .hud code{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+
+  /* Ușile – doar vizual (nu se pot trage) */
   .door{
     position:absolute; left:0; top:0;
-    --x: 0%; --y: 0%; --a: 0;           /* variabile controlate din JS */
+    --x: 0%; --y: 0%; --a: 0;           /* variabile setate din JS conform CONFIG */
     transform: translate(var(--x), var(--y)) rotate(calc(var(--a) * 1deg));
     transform-origin: 0 0;
     width: 84px; height: 44px;
@@ -46,7 +60,7 @@
   .door .leaf{
     position:absolute; top:8px; width:72px; height:28px;
     border:2px solid #000; border-radius:6px; background:var(--closed);
-    transition: transform .3s ease, background .2s ease, box-shadow .2s ease;
+    transition: transform .25s ease, background .2s ease, box-shadow .2s ease;
     transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
   }
   .door .label{
@@ -68,45 +82,52 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Vestiar – poziții setate din cod (fără editare în UI)</h1>
+  <h1>Vestiar – poziții din cod (imagine integrală) + coordonate mouse</h1>
   <div class="legend">
     <span class="c">ÎNCHIS (verde)</span>
     <span class="o">DESCHIS (roșu)</span>
     <span class="p">Fără alimentare (gri)</span>
-    <span style="opacity:.8;margin-left:8px">Click = comută, Shift+Click = fără alimentare</span>
+    <span style="opacity:.8;margin-left:8px">Click pe ușă = comută, Shift+Click = fără alimentare</span>
   </div>
 
   <div class="plan" id="plan">
-    <!-- Uși (ID-urile rămân fixe; pozițiile vin din CONFIG) -->
-    <div class="door" id="d1" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
-    <div class="door" id="d2" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
-    <div class="door" id="d3" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
-    <div class="door" id="d4" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
-    <div class="door" id="d5" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
-    <div class="door" id="d6" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+    <!-- Imagine integrală (NU se taie) -->
+    <img id="planImg" class="plan-img" src="vestiar.jpg" alt="Plan Vestiar">
+
+    <!-- HUD coordonate -->
+    <div class="hud" id="hud">X: <code>0%</code> &nbsp; Y: <code>0%</code> &nbsp; <span id="px">(0×0 px)</span></div>
+
+    <!-- Overlay pt. uși -->
+    <div class="overlay" id="overlay">
+      <div class="door" id="d1" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
+      <div class="door" id="d2" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
+      <div class="door" id="d3" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
+      <div class="door" id="d4" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
+      <div class="door" id="d5" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
+      <div class="door" id="d6" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+    </div>
   </div>
 </div>
 
 <script>
 /* =======================
    1) CONFIG – MODIFICĂ AICI
-   x, y = procente din lățimea/înălțimea planului (0–100)
-   a    = unghi (grade), 0 = ușa „aliniată” cu desenul
-   hinge = 'left' | 'right' (partea balamalei)
+   x, y = procente din overlay (0–100)
+   a    = unghi (grade)
+   hinge = 'left' | 'right'
 ======================= */
 const CONFIG = {
-  d1: { x:  47,  y: 80, a:   0, hinge:'left'  },
-  d2: { x:  200,  y: 34, a:   0, hinge:'left'  },
-  d3: { x:  2,  y: 56, a:   0, hinge:'left'  },
-  d4: { x: 92,  y: 20, a: 180, hinge:'right' },
-  d5: { x: 92,  y: 45, a: 180, hinge:'right' },
-  d6: { x: 92,  y: 70, a: 180, hinge:'right' }
+  d1: { x:  2, y: 12, a:   0, hinge:'left'  },
+  d2: { x:  2, y: 34, a:   0, hinge:'left'  },
+  d3: { x:  2, y: 56, a:   0, hinge:'left'  },
+  d4: { x: 92, y: 20, a: 180, hinge:'right' },
+  d5: { x: 92, y: 45, a: 180, hinge:'right' },
+  d6: { x: 92, y: 70, a: 180, hinge:'right' }
 };
 /* ======================= */
 
-/* Starea ușilor (pentru click) */
+/* 2) Uși – stare vizuală */
 const state = {}; // id -> 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
-
 function setDoorState(id, st){
   state[id] = st;
   const el = document.getElementById(id);
@@ -114,8 +135,16 @@ function setDoorState(id, st){
   el.classList.toggle('open', st==='UNLOCKED');
   el.classList.toggle('nopower', st==='NOPOWER');
 }
+document.querySelectorAll('.door').forEach(el=>{
+  state[el.id] = 'LOCKED';
+  el.addEventListener('click', (e)=>{
+    const id = el.id;
+    if(e.shiftKey){ setDoorState(id,'NOPOWER'); return; }
+    setDoorState(id, state[id]==='LOCKED' ? 'UNLOCKED' : 'LOCKED');
+  });
+});
 
-/* Aplică pozițiile din CONFIG la încărcare */
+/* 3) Aplică poziții din CONFIG (în procente) */
 function applyConfig(){
   Object.keys(CONFIG).forEach(id=>{
     const el = document.getElementById(id);
@@ -125,16 +154,44 @@ function applyConfig(){
     el.style.setProperty('--y', (y||0) + '%');
     el.style.setProperty('--a', (a||0));
     if(hinge) el.dataset.hinge = hinge;
-    state[id] = state[id] || 'LOCKED'; // implicit închis (verde)
   });
 }
 
-/* Click: comută verde/roșu; Shift+Click: gri */
-document.querySelectorAll('.door').forEach(el=>{
-  el.addEventListener('click', (e)=>{
-    const id = el.id;
-    if(e.shiftKey){ setDoorState(id,'NOPOWER'); return; }
-    setDoorState(id, state[id]==='LOCKED' ? 'UNLOCKED' : 'LOCKED');
+/* 4) HUD coordonate mouse (în procente și px) – pentru „măsurare” */
+const overlay = document.getElementById('overlay');
+const hud = document.getElementById('hud');
+const pxSpan = document.getElementById('px');
+
+function updateHud(e){
+  const rect = overlay.getBoundingClientRect();
+  const xpx = Math.max(0, Math.min(rect.width,  e.clientX - rect.left));
+  const ypx = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+  const x = (xpx / rect.width ) * 100;
+  const y = (ypx / rect.height) * 100;
+
+  hud.innerHTML = `X: <code>${x.toFixed(1)}%</code> &nbsp; Y: <code>${y.toFixed(1)}%</code> &nbsp; `;
+  pxSpan.textContent = `(${Math.round(xpx)}×${Math.round(ypx)} px)`;
+  hud.appendChild(pxSpan);
+}
+overlay.addEventListener('mousemove', updateHud);
+
+/* Click pe overlay => copiază în clipboard o linie de CONFIG cu coordonatele */
+overlay.addEventListener('click', (e)=>{
+  // nu declanșăm când ai dat click pe o ușă
+  if (e.target.closest('.door')) return;
+
+  const rect = overlay.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width ) * 100;
+  const y = ((e.clientY - rect.top ) / rect.height) * 100;
+  const line = `{ x: ${x.toFixed(1)}, y: ${y.toFixed(1)}, a: 0, hinge:'left' }`;
+
+  // copie în clipboard
+  const txt = `// INSEREAZĂ ÎN CONFIG:\n${line}`;
+  navigator.clipboard?.writeText(txt).then(()=>{
+    hud.innerHTML = `✅ Copiat: <code>${line}</code>`;
+    setTimeout(()=>{ hud.innerHTML = `X: <code>0%</code> &nbsp; Y: <code>0%</code> &nbsp; <span id="px">(0×0 px)</span>`; }, 1800);
+  }).catch(()=>{
+    alert(txt);
   });
 });
 
@@ -142,31 +199,8 @@ document.querySelectorAll('.door').forEach(el=>{
 applyConfig();
 
 /* ===== MQTT (opțional) =====
-   - decomentează scriptul mqtt.min.js în <head> și adaugă logica de mai jos.
-   - la primirea statusului: setDoorState('d1','LOCKED'|'UNLOCKED'|'NOPOWER')
-*/
-
-/* Exemplu:
-const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {clientId:"web_"+Math.random().toString(16).slice(2)});
-const map = {
-  d1:{status:"locker/1/status", cmd:"locker/1/cmd"},
-  d2:{status:"locker/2/status", cmd:"locker/2/cmd"},
-  d3:{status:"locker/3/status", cmd:"locker/3/cmd"},
-  d4:{status:"locker/4/status", cmd:"locker/4/cmd"},
-  d5:{status:"locker/5/status", cmd:"locker/5/cmd"},
-  d6:{status:"locker/6/status", cmd:"locker/6/cmd"}
-};
-client.on("connect",()=>{ Object.values(map).forEach(ch=> client.subscribe(ch.status)); });
-client.on("message",(t,m)=>{
-  const s = m.toString(); // 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
-  for(const id in map) if(map[id].status===t) setDoorState(id, s);
-});
-// la click poți publica (după setDoorState):
-// client.publish(map[id].cmd, state[id]==='LOCKED' ? 'UNLOCK' : 'LOCK');
+   - poți adăuga mqtt.min.js și să folosești setDoorState('d1','LOCKED'|'UNLOCKED'|'NOPOWER').
 */
 </script>
 </body>
 </html>
-
-
-
