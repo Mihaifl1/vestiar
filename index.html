@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – editor poziție & rotație uși</title>
+<title>Vestiar – editare poziție & rotație uși</title>
 <style>
   :root{
     --bg:#0b1220; --wall:#e5e7eb; --ui:#0f172a;
-    --closed:#22c55e;  /* verde = ÎNCHIS  */
+    --closed:#22c55e;  /* verde = ÎNCHIS */
     --open:#ef4444;    /* roșu  = DESCHIS */
     --nopower:#6b7280; --hinge:#94a3b8;
   }
@@ -33,21 +33,20 @@
 
   .plan{
     position:relative;width:100%;
-    aspect-ratio: 4 / 2.2;              /* ajustează după poza ta */
+    aspect-ratio: 4 / 2.2;
     background:#0f172a url("vestiar.jpg") center/cover no-repeat;
     border:10px solid var(--wall);border-radius:12px;overflow:hidden;
     touch-action:none;
   }
 
-  /* Ușa = grup transformat (translate+rotate) pentru performanță */
+  /* Fiecare ușă e un "grup" cu transform: translate(x,y) rotate(angle) */
   .door{
     position:absolute; left:0; top:0;
-    --x: 20%; --y: 15%; --a: 0;         /* X/Y în %, unghi în grade */
+    --x: 20%; --y: 15%; --a: 0;         /* X/Y în %, unghi grade */
     transform: translate(var(--x), var(--y)) rotate(calc(var(--a) * 1deg));
-    transform-origin: 0 0;
-    width: 84px; height: 44px;
+    transform-origin: 0 0;               /* colțul stânga-sus al grupului */
+    width: 84px; height: 44px;           /* spațiu tehnic al grupului */
     cursor:pointer; user-select:none;
-    will-change: transform;             /* GPU hint */
   }
   .door .hinge{
     position:absolute; top:12px; width:8px; height:20px;
@@ -59,9 +58,6 @@
     transition: transform .35s ease, background .25s ease, box-shadow .25s ease;
     transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
   }
-  /* fără frână în timpul drag-ului */
-  .door.drag .leaf{ transition:none !important; box-shadow:none }
-
   .door .label{
     position:absolute; left:0; top:-14px; font-size:12px; font-weight:bold;
     text-shadow:0 1px 2px rgba(0,0,0,.5)
@@ -73,35 +69,28 @@
   .door[data-hinge="left"]  .leaf{ left:0;  transform-origin:left  center }
   .door[data-hinge="right"] .leaf{ right:0; transform-origin:right center }
 
-  /* DESCHIS = rotație în afară față de balama */
-  .door[data-hinge="left"].open  .leaf{ transform: rotate(92deg);  background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"].open .leaf{ transform: rotate(-92deg); background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  /* DESCHIS = rotație în afară (față de perete) */
+  .door[data-hinge="left"].open  .leaf{ transform: rotate(92deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="right"].open .leaf{ transform: rotate(-92deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
   .door.nopower .leaf{ background:var(--nopower) }
 
-  /* Editor contextual */
+  /* Edit overlay */
   .editor{
     position:absolute; z-index:10; background:#0b1327; border:1px solid #334155;
-    border-radius:10px; padding:10px; display:none; color:#e5e7eb; min-width:240px;
+    border-radius:10px; padding:10px; display:none; color:#e5e7eb; min-width:220px;
     box-shadow:0 8px 20px rgba(0,0,0,.35)
   }
   .editor h3{margin:0 0 8px;font-size:14px}
   .editor .row{display:flex;gap:8px;align-items:center;margin:6px 0}
   .editor label{font-size:12px;opacity:.9}
-  .editor input[type="range"]{width:160px}
+  .editor input[type="range"]{width:140px}
   .editor .btns{display:flex;gap:6px;flex-wrap:wrap}
   .editor button{
     background:#1f2937;border:1px solid #334155;border-radius:6px;color:#fff;
     padding:4px 8px;cursor:pointer;font-size:12px
   }
   .editor .small{font-size:11px;padding:3px 6px}
-
-  /* JSON panel */
-  .jsonpanel{margin-top:10px;display:none}
-  .jsonpanel textarea{
-    width:100%;height:200px;background:#0b1327;color:#e5e7eb;border:1px solid #334155;
-    border-radius:8px;padding:10px;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    font-size:12px; line-height:1.4
-  }
+  .hint{font-size:12px;opacity:.8;margin-left:8px}
 </style>
 </head>
 <body>
@@ -113,12 +102,10 @@
       <span class="o">DESCHIS (roșu)</span>
       <span class="p">Fără alimentare (gri)</span>
     </div>
-    <span style="font-size:12px;opacity:.85;margin-left:8px">Click = comută • Shift+Click = fără alimentare • Clic dreapta = editor</span>
+    <span class="hint">Click = comută stare • Shift+Click = fără alimentare • Clic dreapta = editare</span>
     <div class="toolspacer"></div>
     <button id="btnSave">Save (link)</button>
     <button id="btnCopy">Copy link</button>
-    <button id="btnShowJSON">Vezi layout (JSON)</button>
-    <button id="btnCopyJSON">Copy JSON</button>
     <button id="btnReset">Reset</button>
   </div>
 
@@ -132,7 +119,7 @@
     <div class="door" id="d6" data-hinge="right" style="--x: 92%; --y: 70%; --a: 180"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
   </div>
 
-  <!-- Editor contextual -->
+  <!-- Editor contextual (apare la clic dreapta pe o ușă) -->
   <div class="editor" id="editor">
     <h3 id="edTitle">Editează</h3>
     <div class="row">
@@ -145,7 +132,6 @@
       <input type="range" id="edAngle" min="-180" max="180" value="0">
       <button class="small" data-act="rot--15">◀ 15°</button>
       <button class="small" data-act="rot+15">15° ▶</button>
-      <button class="small" data-act="rot0">0°</button>
     </div>
     <div class="row">
       <label>Mișcare:</label>
@@ -156,15 +142,10 @@
       <button data-act="close">Închide editor</button>
     </div>
   </div>
-
-  <!-- JSON vizualizare -->
-  <div class="jsonpanel" id="jsonPanel">
-    <textarea id="jsonText" readonly></textarea>
-  </div>
 </div>
 
 <script>
-/* ====== Stări uși & click ====== */
+/* ====== Stare, click și animare ====== */
 const state = {}; // id -> 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
 document.querySelectorAll('.door').forEach(el=> state[el.id] = 'LOCKED');
 
@@ -192,19 +173,6 @@ editor.current = null;
 const angleInput = document.getElementById('edAngle');
 const edTitle = document.getElementById('edTitle');
 
-function getAngle(el){ return parseFloat(getComputedStyle(el).getPropertyValue('--a')) || 0 }
-function setAngle(el, val){ el.style.setProperty('--a', String(val)) }
-
-function getXY(el){
-  const sx = getComputedStyle(el).getPropertyValue('--x').trim();
-  const sy = getComputedStyle(el).getPropertyValue('--y').trim();
-  return { x: parseFloat(sx) || 0, y: parseFloat(sy) || 0 };
-}
-function setXY(el, xPerc, yPerc){
-  el.style.setProperty('--x', xPerc + '%');
-  el.style.setProperty('--y', yPerc + '%');
-}
-
 function showEditorFor(el, x, y){
   editor.current = el;
   edTitle.textContent = `Editează ${el.id.toUpperCase()}`;
@@ -227,6 +195,19 @@ function positionEditor(px,py){
   editor.style.top  = top  + 'px';
 }
 
+function getAngle(el){ return parseFloat(getComputedStyle(el).getPropertyValue('--a')) || 0 }
+function setAngle(el, val){ el.style.setProperty('--a', String(val)) }
+
+function getXY(el){
+  const sx = getComputedStyle(el).getPropertyValue('--x').trim();
+  const sy = getComputedStyle(el).getPropertyValue('--y').trim();
+  return { x: parseFloat(sx), y: parseFloat(sy) };
+}
+function setXY(el, xPerc, yPerc){
+  el.style.setProperty('--x', xPerc + '%');
+  el.style.setProperty('--y', yPerc + '%');
+}
+
 /* Clic dreapta pe ușă = editor */
 document.querySelectorAll('.door').forEach(el=>{
   el.addEventListener('contextmenu', (e)=>{
@@ -241,91 +222,21 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-/* ===== Drag fluid cu offset (PointerEvents + rAF) ===== */
-let dragging = false, rafId = null, rectPlan = null;
-let dragEl = null;
-const dragState = { clientX:0, clientY:0, offXPerc:0, offYPerc:0 };
-
-function getPercFromClient(clientX, clientY){
-  const x = Math.max(0, Math.min(100, (clientX - rectPlan.left) / rectPlan.width  * 100));
-  const y = Math.max(0, Math.min(100, (clientY - rectPlan.top ) / rectPlan.height * 100));
-  return {x,y};
+/* ====== Drag în modul Edit ====== */
+let dragging = false;
+function onMove(e){
+  if(!dragging || !editor.current) return;
+  const rect = plan.getBoundingClientRect();
+  const px = (e.touches?e.touches[0].clientX:e.clientX) - rect.left;
+  const py = (e.touches?e.touches[0].clientY:e.clientY) - rect.top;
+  const xPerc = Math.max(0, Math.min(100, px / rect.width * 100));
+  const yPerc = Math.max(0, Math.min(100, py / rect.height * 100));
+  setXY(editor.current, xPerc, yPerc);
 }
-
-function startDrag(el, clientX, clientY){
-  dragEl = el;
-  rectPlan = plan.getBoundingClientRect();
-  const cur = getXY(el);
-  const curAt = getPercFromClient(clientX, clientY);
-  // offset dintre cursor și poziția actuală a ușii (în procente)
-  dragState.offXPerc = curAt.x - cur.x;
-  dragState.offYPerc = curAt.y - cur.y;
-
-  dragging = true;
-  dragEl.classList.add('drag');
-}
-function stopDrag(){
-  if(!dragging) return;
-  dragging = false;
-  dragEl && dragEl.classList.remove('drag');
-  dragEl = null;
-  rectPlan = null;
-  if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
-}
-function scheduleMove(clientX, clientY){
-  dragState.clientX = clientX; 
-  dragState.clientY = clientY;
-  if(rafId) return;
-  rafId = requestAnimationFrame(()=>{
-    rafId = null;
-    if(!dragging || !dragEl || !rectPlan) return;
-    const curAt = getPercFromClient(dragState.clientX, dragState.clientY);
-    // menținem offset-ul inițial: ușa urmărește cursorul 1:1
-    let nx = curAt.x - dragState.offXPerc;
-    let ny = curAt.y - dragState.offYPerc;
-    nx = Math.max(0, Math.min(100, nx));
-    ny = Math.max(0, Math.min(100, ny));
-    setXY(dragEl, nx, ny);
-  });
-}
-
-/* 1) Drag direct PE UȘĂ când editorul e deschis pentru acea ușă */
-document.querySelectorAll('.door').forEach(el=>{
-  el.addEventListener('pointerdown', (e)=>{
-    // doar dacă editorul e deschis pentru această ușă
-    if(editor.current === el && e.buttons === 1){
-      e.preventDefault();
-      startDrag(el, e.clientX, e.clientY);
-      el.setPointerCapture(e.pointerId);
-    }
-  });
-  el.addEventListener('pointermove', (e)=>{
-    if(dragging && dragEl===el) scheduleMove(e.clientX, e.clientY);
-  });
-  el.addEventListener('pointerup', (e)=>{
-    if(dragging && dragEl===el) stopDrag();
-  });
-  el.addEventListener('pointercancel', (e)=>{
-    if(dragging && dragEl===el) stopDrag();
-  });
-});
-
-/* 2) Drag din butonul „Trage (activ)” al editorului – prinde de oriunde pe plan */
-function uiStartDragFromEditor(){
-  if(!editor.current) return;
-  const last = editor._lastPointer || {x: window.innerWidth/2, y: window.innerHeight/2};
-  startDrag(editor.current, last.x, last.y);
-}
-plan.addEventListener('pointermove', (e)=>{
-  // memorăm ultima poziție (pentru butonul din editor)
-  editor._lastPointer = {x:e.clientX, y:e.clientY};
-  if(dragging) scheduleMove(e.clientX, e.clientY);
-});
-plan.addEventListener('pointerup', ()=>{ if(dragging) stopDrag(); });
-plan.addEventListener('pointercancel', stopDrag);
+function startDrag(){ dragging = true; plan.addEventListener('mousemove', onMove); plan.addEventListener('touchmove', onMove, {passive:false}); }
+function stopDrag(){ dragging = false; plan.removeEventListener('mousemove', onMove); plan.removeEventListener('touchmove', onMove); }
 
 /* Editor – acțiuni */
-const angleInput = document.getElementById('edAngle');
 editor.addEventListener('click', (e)=>{
   const act = e.target.dataset.act;
   if(!act || !editor.current) return;
@@ -335,15 +246,14 @@ editor.addEventListener('click', (e)=>{
   if(act==='hinge-right'){ el.dataset.hinge='right'; }
   if(act==='rot--15'){ setAngle(el, getAngle(el)-15); angleInput.value=getAngle(el); }
   if(act==='rot+15'){ setAngle(el, getAngle(el)+15); angleInput.value=getAngle(el); }
-  if(act==='rot0'){ setAngle(el, 0); angleInput.value=0; }
-  if(act==='drag'){ uiStartDragFromEditor(); }
+  if(act==='drag'){ startDrag(); }
   if(act==='center'){ setXY(el, 50, 50); }
 });
 angleInput.addEventListener('input', ()=>{
   if(editor.current) setAngle(editor.current, parseInt(angleInput.value,10) || 0);
 });
 
-/* ===== Persistență în LINK + JSON ===== */
+/* ====== Persistență în LINK (funcționează pe GitHub Pages) ====== */
 function collectLayout(){
   const out = {};
   document.querySelectorAll('.door').forEach(el=>{
@@ -374,11 +284,6 @@ function makeLink(){
   url.searchParams.set('layout', enc(collectLayout()));
   return url.toString();
 }
-
-/* UI – Save/Copy/JSON/Reset */
-const jsonPanel = document.getElementById('jsonPanel');
-const jsonText  = document.getElementById('jsonText');
-
 document.getElementById('btnSave').onclick = ()=>{
   const link = makeLink();
   history.replaceState(null,'',link);
@@ -386,53 +291,17 @@ document.getElementById('btnSave').onclick = ()=>{
 };
 document.getElementById('btnCopy').onclick = async ()=>{
   const link = makeLink();
-  try{ await navigator.clipboard.writeText(link); alert('Copiat link!'); }
+  try{ await navigator.clipboard.writeText(link); alert('Copiat!'); }
   catch{ prompt('Copiază linkul:', link); }
-};
-document.getElementById('btnShowJSON').onclick = ()=>{
-  const data = collectLayout();
-  jsonText.value = JSON.stringify(data, null, 2);
-  jsonPanel.style.display = 'block';
-  jsonText.scrollTop = 0;
-};
-document.getElementById('btnCopyJSON').onclick = async ()=>{
-  const data = JSON.stringify(collectLayout(), null, 2);
-  try{ await navigator.clipboard.writeText(data); alert('Copiat JSON!'); }
-  catch{ prompt('Copiază JSON:', data); }
 };
 document.getElementById('btnReset').onclick = ()=>{
   history.replaceState(null,'',location.pathname);
   location.reload();
 };
-
-/* La încărcare: aplică layout din URL (dacă există) */
 (function(){
   const b64 = new URL(location.href).searchParams.get('layout');
   if(b64){ const layout = dec(b64); if(layout) applyLayout(layout); }
 })();
 </script>
-
-<!--
-MQTT (opțional, când vei dori):
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <script>
-    const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {clientId:"web_"+Math.random().toString(16).slice(2)});
-    const map = {
-      d1:{status:"locker/1/status", cmd:"locker/1/cmd"},
-      d2:{status:"locker/2/status", cmd:"locker/2/cmd"},
-      d3:{status:"locker/3/status", cmd:"locker/3/cmd"},
-      d4:{status:"locker/4/status", cmd:"locker/4/cmd"},
-      d5:{status:"locker/5/status", cmd:"locker/5/cmd"},
-      d6:{status:"locker/6/status", cmd:"locker/6/cmd"}
-    };
-    client.on("connect",()=>{ Object.values(map).forEach(ch=> client.subscribe(ch.status)); });
-    client.on("message",(t,m)=>{
-      const s = m.toString(); // 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
-      for(const id in map) if(map[id].status===t) setDoorState(id, s);
-    });
-    // publish la click (în handlerul de click, după setDoorState):
-    // client.publish(map[id].cmd, state[id]==='LOCKED' ? 'UNLOCK' : 'LOCK');
-  </script>
--->
 </body>
 </html>
