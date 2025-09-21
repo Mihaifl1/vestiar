@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Programări uși – MQTT</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root{ --bg:#0b1220; --card:#0f172a; --bd:#334155; --ok:#22c55e; --warn:#f59e0b; --txt:#e5e7eb; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:Arial,Helvetica,sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0 0 12px}
+  .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .conn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bd);background:var(--card);padding:6px 10px;border-radius:8px}
+  .dot{width:10px;height:10px;border-radius:50%;background:#ef4444}
+  .ok{background:var(--ok)}
+  select,button,input[type="time"],input[type="text"]{
+    background:var(--card);color:var(--txt);border:1px solid var(--bd);border-radius:8px;padding:6px 10px
+  }
+  .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .rules{display:grid;grid-template-columns: 1.5fr 0.8fr 0.8fr 0.6fr 0.3fr;gap:8px;align-items:center}
+  .rules .hdr{font-weight:700;opacity:.9}
+  .days{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--bd);border-radius:999px}
+  .chip input{accent-color:#60a5fa}
+  .del{background:#172036;border:1px solid var(--bd);border-radius:8px;padding:6px 8px;cursor:pointer}
+  .bottom{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+  .status{min-height:22px}
+  .good{color:var(--ok)} .warn{color:var(--warn)}
+  .note{opacity:.8;font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Programări pentru uși (MQTT)</h1>
+
+  <div class="top">
+    <div class="conn" id="conn"><span class="dot" id="dot"></span><span id="connText">Se conectează la MQTT…</span></div>
+    <a href="index.html" style="margin-left:auto;color:#93c5fd">⟵ Înapoi la hartă</a>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <label>Ușă:</label>
+      <select id="doorSel">
+        <option value="1">Ușa 1</option><option value="2">Ușa 2</option><option value="3">Ușa 3</option>
+        <option value="4">Ușa 4</option><option value="5">Ușa 5</option><option value="6">Ușa 6</option>
+      </select>
+
+      <button id="addBtn">Adaugă regulă</button>
+      <button id="saveBtn">Salvează în ESP</button>
+      <button id="loadBtn">Încarcă din ESP</button>
+      <button id="clearBtn">Șterge toate</button>
+      <button id="exampleBtn">Exemplu (L–V)</button>
+      <span class="status" id="statusMsg"></span>
+    </div>
+
+    <div class="rules" id="rulesHdr">
+      <div class="hdr">Zile</div>
+      <div class="hdr">Ora</div>
+      <div class="hdr">Acțiune</div>
+      <div class="hdr">Notă</div>
+      <div class="hdr"></div>
+    </div>
+    <div class="rules" id="rules"></div>
+
+    <div class="note">
+      Formatul trimis pe MQTT: <code>{"rules":[{"days":[0,1,2,3,4],"time":"08:00","action":"UNLOCK"}...]}</code>
+      (0=Luni … 6=Duminică)
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== MQTT minimal ===== */
+const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", { clientId:"sched_"+Math.random().toString(16).slice(2) });
+const connText = document.getElementById('connText'); const dot = document.getElementById('dot');
+
+client.on('connect', ()=>{ dot.classList.add('ok'); connText.textContent='MQTT conectat'; subscribeForCurrent(); });
+client.on('reconnect', ()=>{ dot.classList.remove('ok'); connText.textContent='Reconectare…'; });
+client.on('close', ()=>{ dot.classList.remove('ok'); connText.textContent='MQTT închis'; });
+
+function subscribeForCurrent(){
+  [1,2,3,4,5,6].forEach(i=> client.subscribe(`locker/${i}/schedule`));
+}
+
+/* ===== UI / reguli =====
+   Regula simplă: { days:[0..6], time:"HH:MM", action:"LOCK|UNLOCK", note:"" }
+*/
+const dayNames = ['Lu','Ma','Mi','Jo','Vi','Sa','Du'];
+let currentRules = [];
+
+const rulesEl  = document.getElementById('rules');
+const doorSel  = document.getElementById('doorSel');
+const addBtn   = document.getElementById('addBtn');
+const saveBtn  = document.getElementById('saveBtn');
+const loadBtn  = document.getElementById('loadBtn');
+const clearBtn = document.getElementById('clearBtn');
+const exampleBtn = document.getElementById('exampleBtn');
+const statusMsg = document.getElementById('statusMsg');
+
+function ruleRow(rule, idx){
+  const frag = document.createDocumentFragment();
+
+  // Zile
+  const daysBox = document.createElement('div'); daysBox.className='days';
+  dayNames.forEach((name,i)=>{
+    const chip = document.createElement('label'); chip.className='chip';
+    const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = (rule.days||[]).includes(i);
+    cb.addEventListener('change',()=>{
+      if(cb.checked){ if(!rule.days.includes(i)) rule.days.push(i); }
+      else { rule.days = rule.days.filter(x=>x!==i); }
+    });
+    chip.appendChild(cb); chip.append(name); daysBox.appendChild(chip);
+  });
+
+  // Ora
+  const time = document.createElement('input'); time.type='time'; time.value = rule.time || '08:00';
+  time.addEventListener('input',()=> rule.time = time.value);
+
+  // Acțiune
+  const act = document.createElement('select');
+  ['UNLOCK','LOCK'].forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=a; act.appendChild(o); });
+  act.value = rule.action || 'UNLOCK';
+  act.addEventListener('change',()=> rule.action = act.value);
+
+  // Notă
+  const note = document.createElement('input'); note.type='text'; note.placeholder='opțional';
+  note.value = rule.note || '';
+  note.addEventListener('input',()=> rule.note = note.value);
+
+  // Ștergere
+  const del = document.createElement('button'); del.className='del'; del.textContent='✕';
+  del.addEventListener('click',()=>{ currentRules.splice(idx,1); renderRules(); });
+
+  // în grid
+  const w1=document.createElement('div'), w2=document.createElement('div'),
+        w3=document.createElement('div'), w4=document.createElement('div'), w5=document.createElement('div');
+  w1.appendChild(daysBox); w2.appendChild(time); w3.appendChild(act); w4.appendChild(note); w5.appendChild(del);
+  frag.appendChild(w1); frag.appendChild(w2); frag.appendChild(w3); frag.appendChild(w4); frag.appendChild(w5);
+  return frag;
+}
+
+function renderRules(){ rulesEl.innerHTML=''; currentRules.forEach((r,i)=> rulesEl.appendChild(ruleRow(r,i))); }
+
+addBtn.onclick = ()=>{ currentRules.push({days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}); renderRules(); };
+clearBtn.onclick = ()=>{ currentRules=[]; renderRules(); };
+exampleBtn.onclick = ()=>{
+  currentRules = [
+    {days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:'deschidere L–V'},
+    {days:[0,1,2,3,4], time:'18:00', action:'LOCK',   note:'închidere L–V'}
+  ];
+  renderRules();
+};
+
+function flash(msg, ok=true){ statusMsg.innerHTML = `<span class="${ok?'good':'warn'}">${msg}</span>`; setTimeout(()=>statusMsg.textContent='',2500); }
+
+/* Save → locker/<id>/schedule/set */
+saveBtn.onclick = ()=>{
+  const id = parseInt(doorSel.value,10);
+  const payload = JSON.stringify({rules: currentRules}, null, 0);
+  client.publish(`locker/${id}/schedule/set`, payload);
+  flash('Program trimis către ESP.');
+};
+
+/* Load ← cere la locker/<id>/schedule/get; ESP răspunde la locker/<id>/schedule */
+loadBtn.onclick = ()=>{
+  const id = parseInt(doorSel.value,10);
+  client.publish(`locker/${id}/schedule/get`, "REQ");
+  flash('Cerere program trimisă. Aștept răspunsul ESP.');
+};
+
+/* Recepție program curent (de la orice ușă) */
+client.on('message', (topic, payload)=>{
+  const parts = topic.split('/');
+  if (parts.length>=3 && parts[0]==='locker' && parts[2]==='schedule'){
+    const id = parseInt(parts[1],10);
+    const sel = parseInt(doorSel.value,10);
+    if (id!==sel) return; // arată doar pentru ușa selectată
+    try{
+      const obj = JSON.parse(payload.toString());
+      if (Array.isArray(obj.rules)){ currentRules = obj.rules; renderRules(); flash('Program primit din ESP.'); }
+    }catch{ flash('JSON invalid de la ESP.', false); }
+  }
+});
+
+/* start */
+renderRules();
+</script>
+</body>
+</html>
