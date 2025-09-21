@@ -3,152 +3,245 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – uși (deschidere în afară)</title>
+<title>Vestiar – editor poziții & uși</title>
 <style>
   :root{
     --bg:#0b1220; --wall:#e5e7eb;
-    --closed:#22c55e;   /* verde = ÎNCHIS  */
+    --closed:#22c55e;   /* verde = ÎNCHIS */
     --open:#ef4444;     /* roșu  = DESCHIS */
     --nopower:#6b7280;
     --hinge:#94a3b8;
+    --ui:#0f172a;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:#fff;font-family:Arial,Helvetica,sans-serif}
   .wrap{max-width:980px;margin:0 auto;padding:16px}
-  h1{font-size:20px;margin:0 0 8px}
-  .legend{font-size:14px;opacity:.9;margin-bottom:10px}
-  .legend span{display:inline-block;margin-right:10px;padding:2px 8px;border-radius:6px}
+  h1{font-size:20px;margin:0 0 10px}
+  .toolbar{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    background:var(--ui);padding:8px;border-radius:8px;margin-bottom:10px
+  }
+  .toolbar button, .toolbar select{
+    background:#1f2937;color:#fff;border:1px solid #334155;border-radius:6px;
+    padding:6px 10px;cursor:pointer;font-size:14px
+  }
+  .toolbar button:hover{filter:brightness(1.1)}
+  .toolspacer{flex:1}
+  .legend{font-size:14px;opacity:.9}
+  .legend span{display:inline-block;margin-right:8px;padding:2px 8px;border-radius:6px}
   .legend .c{background:var(--closed)}
   .legend .o{background:var(--open)}
   .legend .p{background:var(--nopower)}
-
-  /* Planul: fundal JPG + pereți */
   .plan{
-    position:relative;
-    width:100%;
-    aspect-ratio: 4 / 2.2;                /* ajustează după nevoie */
+    position:relative;width:100%;
+    aspect-ratio: 4 / 2.2;
     background:#0f172a url("vestiar.jpg") center/cover no-repeat;
-    border:10px solid var(--wall);
-    border-radius:12px;
-    overflow:visible;                      /* ca să se vadă ușile în afara peretelui */
+    border:10px solid var(--wall);border-radius:12px;overflow:visible;
   }
-
-  /* Ușă montată pe peretele stâng; canatul iese în exterior (stânga) */
   .door{
-    position:absolute;
-    left:-8px;               /* “în zid” */
-    width:64px; height:28px;
-    transform:translateY(-50%);
-    cursor:pointer; user-select:none;
+    position:absolute; left:-8px; top:14%;
+    width:64px;height:28px; transform:translateY(-50%);
+    cursor:grab; user-select:none;
   }
-  .door .leaf{
-    position:absolute; left:0; top:0;
-    width:64px; height:28px;
-    border:2px solid #000; border-radius:4px;
-    background:var(--closed);              /* implicit ÎNCHIS (verde) */
-    transform-origin: left center;         /* balama pe stânga */
+  .door.drag{ cursor:grabbing }
+  .hinge{ position:absolute; width:6px;height:20px; top:4px; background:var(--hinge) }
+  .leaf{
+    position:absolute; width:64px;height:28px; top:0;
+    border:2px solid #000; border-radius:4px; background:var(--closed);
     transition: transform .35s ease, background .25s ease, box-shadow .25s ease;
-    box-shadow:0 0 0 rgba(0,0,0,0);
+    transform-origin:left center; box-shadow:0 0 0 rgba(0,0,0,0)
   }
-  .door .hinge{
-    position:absolute; left:-6px; top:4px; width:6px; height:20px;
-    background:var(--hinge); border-radius:4px 0 0 4px;
-  }
-  /* DESCHIS = rotație pozitivă în afară (spre stânga, în exterior) */
-  .door.open .leaf{
-    transform: rotate(92deg);
-    background:var(--open);
-    box-shadow: 0 6px 10px rgba(0,0,0,.45);
-  }
+  .door[data-hinge="left"] .hinge{ left:-6px; border-radius:4px 0 0 4px }
+  .door[data-hinge="left"] .leaf{ left:0; transform-origin:left center }
+  .door[data-hinge="right"]{ left:auto; right:-8px } /* montată pe peretele drept */
+  .door[data-hinge="right"] .hinge{ right:-6px; border-radius:0 4px 4px 0 }
+  .door[data-hinge="right"] .leaf{ right:0; transform-origin:right center }
+
+  .door.open .leaf{ background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  /* deschidere ÎN AFARĂ: pentru stânga rotim +92°, pentru dreapta -92° */
+  .door[data-hinge="left"].open .leaf{ transform: rotate(92deg) }
+  .door[data-hinge="right"].open .leaf{ transform: rotate(-92deg) }
   .door.nopower .leaf{ background:var(--nopower) }
 
-  /* etichetă */
-  .door .label{
+  .label{
     position:absolute; left:72px; top:50%; transform:translateY(-50%);
-    font-size:12px; font-weight:bold; white-space:nowrap; opacity:.95;
+    font-size:12px; font-weight:bold; white-space:nowrap; opacity:.95
   }
+  .door[data-hinge="right"] .label{ left:auto; right:72px }
 
-  /* Poziții pe înălțime (procent) – modifică după planul tău */
-  #d1{ top:14% } #d2{ top:34% } #d3{ top:54% } #d4{ top:74% } #d5{ top:84% } #d6{ top:94% }
+  /* puncte de prindere vizuale pentru editare */
+  .door::after{
+    content:"⋮"; position:absolute; top:50%; transform:translateY(-50%);
+    color:#9ca3af; font-size:16px; opacity:.7
+  }
+  .door[data-hinge="left"]::after{ left:-16px }
+  .door[data-hinge="right"]::after{ right:-16px }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Vestiar – uși animate (click = deschide/închide, Shift+Click = fără alimentare)</h1>
+<div class="wrap">
+  <h1>Vestiar – editor poziții</h1>
+
+  <div class="toolbar">
     <div class="legend">
       <span class="c">ÎNCHIS (verde)</span>
       <span class="o">DESCHIS (roșu)</span>
       <span class="p">Fără alimentare (gri)</span>
     </div>
-
-    <div class="plan" id="plan">
-      <!-- Uși pe peretele stâng; ies în afară la DESCHIS -->
-      <div class="door" id="d1"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
-      <div class="door" id="d2"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
-      <div class="door" id="d3"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
-      <div class="door" id="d4"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
-      <div class="door" id="d5"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
-      <div class="door" id="d6"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
-    </div>
+    <div class="toolspacer"></div>
+    <label>Ușă: 
+      <select id="selDoor">
+        <option value="d1">Ușa 1</option>
+        <option value="d2">Ușa 2</option>
+        <option value="d3">Ușa 3</option>
+        <option value="d4">Ușa 4</option>
+        <option value="d5">Ușa 5</option>
+        <option value="d6">Ușa 6</option>
+      </select>
+    </label>
+    <label>Balama:
+      <select id="selHinge">
+        <option value="left">stânga</option>
+        <option value="right">dreapta</option>
+      </select>
+    </label>
+    <button id="btnApplyHinge">Aplică balama</button>
+    <button id="btnSave">Save (generează link)</button>
+    <button id="btnCopy">Copy link</button>
+    <button id="btnReset">Reset</button>
   </div>
 
+  <div class="plan" id="plan">
+    <!-- Uși (poziții inițiale provizorii) -->
+    <div class="door" id="d1" data-hinge="left"  style="top:14%; left:-8px"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
+    <div class="door" id="d2" data-hinge="left"  style="top:34%; left:-8px"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
+    <div class="door" id="d3" data-hinge="left"  style="top:54%; left:-8px"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
+    <div class="door" id="d4" data-hinge="left"  style="top:74%; left:-8px"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
+    <div class="door" id="d5" data-hinge="right" style="top:34%; right:-8px"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
+    <div class="door" id="d6" data-hinge="right" style="top:64%; right:-8px"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+  </div>
+</div>
+
 <script>
-/* Click = comută ÎNCHIS/DESCHIS; Shift+Click = NOPower (gri)
-   Verde = ÎNCHIS, Roșu = DESCHIS, conform cerinței.
-   API simplă setDoorState(id, 'LOCKED'|'UNLOCKED'|'NOPOWER') pentru MQTT.
-*/
-(function(){
-  const state = {}; // id -> 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
-
-  function applyVisual(doorEl, st){
-    doorEl.classList.toggle('open', st==='UNLOCKED');
-    doorEl.classList.toggle('nopower', st==='NOPOWER');
-  }
-  function setDoorState(id, st){
-    state[id] = st;
-    const el = document.getElementById(id);
-    if(el) applyVisual(el, st);
-  }
-
-  // inițial: toate ÎNCHISE (verde)
-  ['d1','d2','d3','d4','d5','d6'].forEach(id=> setDoorState(id,'LOCKED'));
-
-  // click handlers
-  document.querySelectorAll('.door').forEach(el=>{
-    el.addEventListener('click', (e)=>{
-      const id = el.id;
-      if(e.shiftKey){ setDoorState(id,'NOPOWER'); return; }
-      setDoorState(id, state[id]==='LOCKED' ? 'UNLOCKED' : 'LOCKED');
-    });
+/* --- Stări uși şi interacțiuni --- */
+const state = {}; // id -> 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
+['d1','d2','d3','d4','d5','d6'].forEach(id=> state[id]='LOCKED');
+function setDoorState(id, st){
+  state[id] = st;
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.toggle('open', st==='UNLOCKED');
+  el.classList.toggle('nopower', st==='NOPOWER');
+}
+document.querySelectorAll('.door').forEach(el=>{
+  el.addEventListener('click', (e)=>{
+    const id = el.id;
+    if(e.shiftKey){ setDoorState(id,'NOPOWER'); return; }
+    setDoorState(id, state[id]==='LOCKED' ? 'UNLOCKED' : 'LOCKED');
   });
+});
 
-  // expune pentru integrare MQTT
-  window.setDoorState = setDoorState;
+/* --- Drag & Drop pe verticală (poziție procentuală), plus montare stânga/dreapta --- */
+const plan = document.getElementById('plan');
+document.querySelectorAll('.door').forEach(el=>{
+  let dragging=false, startY=0, startTopPerc=0;
+  const onDown = e=>{
+    dragging=true; el.classList.add('drag');
+    startY = (e.touches?e.touches[0].clientY:e.clientY);
+    const rect = plan.getBoundingClientRect();
+    const topPerc = ((el.getBoundingClientRect().top - rect.top) / rect.height)*100;
+    startTopPerc = topPerc;
+    e.preventDefault();
+  };
+  const onMove = e=>{
+    if(!dragging) return;
+    const y = (e.touches?e.touches[0].clientY:e.clientY);
+    const rect = plan.getBoundingClientRect();
+    let deltaPerc = (y - startY) / rect.height * 100;
+    let newTop = Math.max(2, Math.min(98, startTopPerc + deltaPerc));
+    el.style.top = newTop+'%';
+  };
+  const onUp = ()=>{ dragging=false; el.classList.remove('drag'); };
+  el.addEventListener('mousedown', onDown); el.addEventListener('touchstart', onDown, {passive:false});
+  window.addEventListener('mousemove', onMove); window.addEventListener('touchmove', onMove, {passive:false});
+  window.addEventListener('mouseup', onUp); window.addEventListener('touchend', onUp);
+});
+
+/* --- UI: schimbare balama --- */
+const selDoor = document.getElementById('selDoor');
+const selHinge = document.getElementById('selHinge');
+document.getElementById('btnApplyHinge').onclick = ()=>{
+  const id = selDoor.value, hinge = selHinge.value;
+  const el = document.getElementById(id);
+  el.dataset.hinge = hinge;
+  // repoziționează la marginea potrivită
+  if(hinge==='left'){ el.style.right=''; el.style.left='-8px'; }
+  else { el.style.left=''; el.style.right='-8px'; }
+};
+
+/* --- Serializare layout în URL --- */
+function collectLayout(){
+  const out = {};
+  document.querySelectorAll('.door').forEach(el=>{
+    const id = el.id;
+    out[id] = {
+      top: el.style.top || '50%',
+      hinge: el.dataset.hinge || 'left',
+      state: state[id] || 'LOCKED'
+    };
+  });
+  return out;
+}
+function applyLayout(obj){
+  Object.keys(obj||{}).forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const d = obj[id];
+    if(d.hinge){ el.dataset.hinge = d.hinge; if(d.hinge==='left'){ el.style.right=''; el.style.left='-8px'; } else { el.style.left=''; el.style.right='-8px'; } }
+    if(d.top){ el.style.top = d.top; }
+    if(d.state){ setDoorState(id, d.state); }
+  });
+}
+function encodeData(data){
+  const txt = JSON.stringify(data);
+  return btoa(unescape(encodeURIComponent(txt))); // Base64 în URL
+}
+function decodeData(b64){
+  try{ return JSON.parse(decodeURIComponent(escape(atob(b64)))); }catch(e){ return null; }
+}
+function makeLink(){
+  const b64 = encodeData(collectLayout());
+  const url = new URL(location.href);
+  url.searchParams.set('layout', b64);
+  return url.toString();
+}
+
+/* --- Butoane --- */
+document.getElementById('btnSave').onclick = ()=>{
+  const link = makeLink();
+  history.replaceState(null,'',link); // rămâne în bară
+  alert('Link generat și aplicat în bara de adrese.\nFolosește Copy link pentru a-l copia.');
+};
+document.getElementById('btnCopy').onclick = async ()=>{
+  const link = makeLink();
+  try{ await navigator.clipboard.writeText(link); alert('Copiat!'); }
+  catch(e){ prompt('Copiază manual linkul:', link); }
+};
+document.getElementById('btnReset').onclick = ()=>{
+  history.replaceState(null,'',location.pathname);
+  location.reload();
+};
+
+/* --- La încărcare: dacă există ?layout=..., aplică --- */
+(function(){
+  const b64 = new URL(location.href).searchParams.get('layout');
+  if(b64){
+    const layout = decodeData(b64);
+    if(layout) applyLayout(layout);
+  }
 })();
 </script>
 
-<!-- ===== MQTT (opțional) =====
-1) În <head>, adaugă:
-   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-2) După scriptul de mai sus, scrie:
-   <script>
-     const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {clientId:"web_"+Math.random().toString(16).slice(2)});
-     const map = {
-       d1:{status:"locker/1/status", cmd:"locker/1/cmd"},
-       d2:{status:"locker/2/status", cmd:"locker/2/cmd"},
-       d3:{status:"locker/3/status", cmd:"locker/3/cmd"},
-       d4:{status:"locker/4/status", cmd:"locker/4/cmd"},
-       d5:{status:"locker/5/status", cmd:"locker/5/cmd"},
-       d6:{status:"locker/6/status", cmd:"locker/6/cmd"}
-     };
-     client.on("connect",()=>{ Object.values(map).forEach(ch=> client.subscribe(ch.status)); });
-     client.on("message",(t,m)=>{
-       const s = m.toString(); // 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
-       for(const id in map) if(map[id].status===t) window.setDoorState(id, s);
-     });
-     // dacă vrei publish la click, modifică handlerul de click să trimită:
-     // client.publish(map[id].cmd, state[id]==='LOCKED' ? 'UNLOCK' : 'LOCK');
-   </script>
-=============================== -->
+<!-- MQTT (opțional): după acest script, poți adăuga mqtt.min.js și logica de subscribe/publish folosind window.setDoorState / state[] dacă ai nevoie -->
 </body>
 </html>
