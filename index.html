@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – editare poziție & rotație uși</title>
+<title>Vestiar – uși cu poziții din cod</title>
 <style>
   :root{
-    --bg:#0b1220; --wall:#e5e7eb; --ui:#0f172a;
-    --closed:#22c55e;  /* verde = ÎNCHIS */
+    --bg:#0b1220; --wall:#e5e7eb;
+    --closed:#22c55e;  /* verde = ÎNCHIS  */
     --open:#ef4444;    /* roșu  = DESCHIS */
     --nopower:#6b7280; --hinge:#94a3b8;
   }
@@ -15,38 +15,29 @@
   body{margin:0;background:var(--bg);color:#fff;font-family:Arial,Helvetica,sans-serif}
   .wrap{max-width:1100px;margin:0 auto;padding:16px}
   h1{font-size:20px;margin:0 0 10px}
-  .toolbar{
-    display:flex;flex-wrap:wrap;gap:8px;align-items:center;
-    background:var(--ui);padding:8px;border-radius:8px;margin-bottom:10px
-  }
-  .toolbar button{
-    background:#1f2937;color:#fff;border:1px solid #334155;border-radius:6px;
-    padding:6px 10px;cursor:pointer;font-size:14px
-  }
-  .toolbar button:hover{filter:brightness(1.1)}
-  .legend{font-size:14px;opacity:.9}
+
+  .legend{font-size:14px;opacity:.9;margin-bottom:10px}
   .legend span{display:inline-block;margin-right:8px;padding:2px 8px;border-radius:6px}
   .legend .c{background:var(--closed)}
   .legend .o{background:var(--open)}
   .legend .p{background:var(--nopower)}
-  .toolspacer{flex:1}
 
   .plan{
     position:relative;width:100%;
     aspect-ratio: 4 / 2.2;
     background:#0f172a url("vestiar.jpg") center/cover no-repeat;
     border:10px solid var(--wall);border-radius:12px;overflow:hidden;
-    touch-action:none;
+    user-select:none;
   }
 
-  /* Fiecare ușă e un "grup" cu transform: translate(x,y) rotate(angle) */
+  /* Ușa = grup transformat (translate+rotate) – doar vizualizare, fără drag */
   .door{
     position:absolute; left:0; top:0;
-    --x: 20%; --y: 15%; --a: 0;         /* X/Y în %, unghi grade */
+    --x: 0%; --y: 0%; --a: 0;           /* variabile controlate din JS */
     transform: translate(var(--x), var(--y)) rotate(calc(var(--a) * 1deg));
-    transform-origin: 0 0;               /* colțul stânga-sus al grupului */
-    width: 84px; height: 44px;           /* spațiu tehnic al grupului */
-    cursor:pointer; user-select:none;
+    transform-origin: 0 0;
+    width: 84px; height: 44px;
+    cursor:pointer;
   }
   .door .hinge{
     position:absolute; top:12px; width:8px; height:20px;
@@ -55,7 +46,7 @@
   .door .leaf{
     position:absolute; top:8px; width:72px; height:28px;
     border:2px solid #000; border-radius:6px; background:var(--closed);
-    transition: transform .35s ease, background .25s ease, box-shadow .25s ease;
+    transition: transform .3s ease, background .2s ease, box-shadow .2s ease;
     transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
   }
   .door .label{
@@ -69,85 +60,52 @@
   .door[data-hinge="left"]  .leaf{ left:0;  transform-origin:left  center }
   .door[data-hinge="right"] .leaf{ right:0; transform-origin:right center }
 
-  /* DESCHIS = rotație în afară (față de perete) */
-  .door[data-hinge="left"].open  .leaf{ transform: rotate(92deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"].open .leaf{ transform: rotate(-92deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  /* DESCHIS = rotație în afară față de balama */
+  .door[data-hinge="left"].open  .leaf{ transform: rotate(92deg);  background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
+  .door[data-hinge="right"].open .leaf{ transform: rotate(-92deg); background:var(--open);  box-shadow:0 6px 10px rgba(0,0,0,.45) }
   .door.nopower .leaf{ background:var(--nopower) }
-
-  /* Edit overlay */
-  .editor{
-    position:absolute; z-index:10; background:#0b1327; border:1px solid #334155;
-    border-radius:10px; padding:10px; display:none; color:#e5e7eb; min-width:220px;
-    box-shadow:0 8px 20px rgba(0,0,0,.35)
-  }
-  .editor h3{margin:0 0 8px;font-size:14px}
-  .editor .row{display:flex;gap:8px;align-items:center;margin:6px 0}
-  .editor label{font-size:12px;opacity:.9}
-  .editor input[type="range"]{width:140px}
-  .editor .btns{display:flex;gap:6px;flex-wrap:wrap}
-  .editor button{
-    background:#1f2937;border:1px solid #334155;border-radius:6px;color:#fff;
-    padding:4px 8px;cursor:pointer;font-size:12px
-  }
-  .editor .small{font-size:11px;padding:3px 6px}
-  .hint{font-size:12px;opacity:.8;margin-left:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Vestiar – editezi cu clic dreapta • tragi & rotești cum vrei</h1>
-  <div class="toolbar">
-    <div class="legend">
-      <span class="c">ÎNCHIS (verde)</span>
-      <span class="o">DESCHIS (roșu)</span>
-      <span class="p">Fără alimentare (gri)</span>
-    </div>
-    <span class="hint">Click = comută stare • Shift+Click = fără alimentare • Clic dreapta = editare</span>
-    <div class="toolspacer"></div>
-    <button id="btnSave">Save (link)</button>
-    <button id="btnCopy">Copy link</button>
-    <button id="btnReset">Reset</button>
+  <h1>Vestiar – poziții setate din cod (fără editare în UI)</h1>
+  <div class="legend">
+    <span class="c">ÎNCHIS (verde)</span>
+    <span class="o">DESCHIS (roșu)</span>
+    <span class="p">Fără alimentare (gri)</span>
+    <span style="opacity:.8;margin-left:8px">Click = comută, Shift+Click = fără alimentare</span>
   </div>
 
   <div class="plan" id="plan">
-    <!-- Uși inițiale; poziție/orientare se pot schimba -->
-    <div class="door" id="d1" data-hinge="left"  style="--x: 2%;  --y: 12%; --a: 0"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
-    <div class="door" id="d2" data-hinge="left"  style="--x: 2%;  --y: 34%; --a: 0"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
-    <div class="door" id="d3" data-hinge="left"  style="--x: 2%;  --y: 56%; --a: 0"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
-    <div class="door" id="d4" data-hinge="right" style="--x: 92%; --y: 20%; --a: 180"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
-    <div class="door" id="d5" data-hinge="right" style="--x: 92%; --y: 45%; --a: 180"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
-    <div class="door" id="d6" data-hinge="right" style="--x: 92%; --y: 70%; --a: 180"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
-  </div>
-
-  <!-- Editor contextual (apare la clic dreapta pe o ușă) -->
-  <div class="editor" id="editor">
-    <h3 id="edTitle">Editează</h3>
-    <div class="row">
-      <label>Balama:</label>
-      <button class="small" data-act="hinge-left">stânga</button>
-      <button class="small" data-act="hinge-right">dreapta</button>
-    </div>
-    <div class="row">
-      <label>Rotație:</label>
-      <input type="range" id="edAngle" min="-180" max="180" value="0">
-      <button class="small" data-act="rot--15">◀ 15°</button>
-      <button class="small" data-act="rot+15">15° ▶</button>
-    </div>
-    <div class="row">
-      <label>Mișcare:</label>
-      <button class="small" data-act="drag">Trage (activ)</button>
-      <button class="small" data-act="center">Centrează</button>
-    </div>
-    <div class="btns">
-      <button data-act="close">Închide editor</button>
-    </div>
+    <!-- Uși (ID-urile rămân fixe; pozițiile vin din CONFIG) -->
+    <div class="door" id="d1" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
+    <div class="door" id="d2" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
+    <div class="door" id="d3" data-hinge="left"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
+    <div class="door" id="d4" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
+    <div class="door" id="d5" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
+    <div class="door" id="d6" data-hinge="right"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
   </div>
 </div>
 
 <script>
-/* ====== Stare, click și animare ====== */
+/* =======================
+   1) CONFIG – MODIFICĂ AICI
+   x, y = procente din lățimea/înălțimea planului (0–100)
+   a    = unghi (grade), 0 = ușa „aliniată” cu desenul
+   hinge = 'left' | 'right' (partea balamalei)
+======================= */
+const CONFIG = {
+  d1: { x:  2,  y: 12, a:   0, hinge:'left'  },
+  d2: { x:  2,  y: 34, a:   0, hinge:'left'  },
+  d3: { x:  2,  y: 56, a:   0, hinge:'left'  },
+  d4: { x: 92,  y: 20, a: 180, hinge:'right' },
+  d5: { x: 92,  y: 45, a: 180, hinge:'right' },
+  d6: { x: 92,  y: 70, a: 180, hinge:'right' }
+};
+/* ======================= */
+
+/* Starea ușilor (pentru click) */
 const state = {}; // id -> 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
-document.querySelectorAll('.door').forEach(el=> state[el.id] = 'LOCKED');
 
 function setDoorState(id, st){
   state[id] = st;
@@ -156,152 +114,56 @@ function setDoorState(id, st){
   el.classList.toggle('open', st==='UNLOCKED');
   el.classList.toggle('nopower', st==='NOPOWER');
 }
+
+/* Aplică pozițiile din CONFIG la încărcare */
+function applyConfig(){
+  Object.keys(CONFIG).forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const {x,y,a,hinge} = CONFIG[id];
+    el.style.setProperty('--x', (x||0) + '%');
+    el.style.setProperty('--y', (y||0) + '%');
+    el.style.setProperty('--a', (a||0));
+    if(hinge) el.dataset.hinge = hinge;
+    state[id] = state[id] || 'LOCKED'; // implicit închis (verde)
+  });
+}
+
+/* Click: comută verde/roșu; Shift+Click: gri */
 document.querySelectorAll('.door').forEach(el=>{
   el.addEventListener('click', (e)=>{
-    // dacă editorul e deschis pentru această ușă, ignorăm comutarea
-    if(editor.current === el) return;
     const id = el.id;
     if(e.shiftKey){ setDoorState(id,'NOPOWER'); return; }
     setDoorState(id, state[id]==='LOCKED' ? 'UNLOCKED' : 'LOCKED');
   });
 });
 
-/* ====== Editor contextual (clic dreapta) ====== */
-const plan = document.getElementById('plan');
-const editor = document.getElementById('editor');
-editor.current = null;
-const angleInput = document.getElementById('edAngle');
-const edTitle = document.getElementById('edTitle');
+/* Inițializează */
+applyConfig();
 
-function showEditorFor(el, x, y){
-  editor.current = el;
-  edTitle.textContent = `Editează ${el.id.toUpperCase()}`;
-  angleInput.value = getAngle(el);
-  editor.style.display = 'block';
-  positionEditor(x,y);
-}
-function hideEditor(){
-  editor.style.display = 'none';
-  editor.current = null;
-  stopDrag();
-}
-function positionEditor(px,py){
-  const r = editor.getBoundingClientRect();
-  const vw = window.innerWidth, vh = window.innerHeight;
-  let left = px, top = py;
-  if(left + r.width > vw - 10) left = vw - r.width - 10;
-  if(top  + r.height > vh - 10) top  = vh - r.height - 10;
-  editor.style.left = left + 'px';
-  editor.style.top  = top  + 'px';
-}
+/* ===== MQTT (opțional) =====
+   - decomentează scriptul mqtt.min.js în <head> și adaugă logica de mai jos.
+   - la primirea statusului: setDoorState('d1','LOCKED'|'UNLOCKED'|'NOPOWER')
+*/
 
-function getAngle(el){ return parseFloat(getComputedStyle(el).getPropertyValue('--a')) || 0 }
-function setAngle(el, val){ el.style.setProperty('--a', String(val)) }
-
-function getXY(el){
-  const sx = getComputedStyle(el).getPropertyValue('--x').trim();
-  const sy = getComputedStyle(el).getPropertyValue('--y').trim();
-  return { x: parseFloat(sx), y: parseFloat(sy) };
-}
-function setXY(el, xPerc, yPerc){
-  el.style.setProperty('--x', xPerc + '%');
-  el.style.setProperty('--y', yPerc + '%');
-}
-
-/* Clic dreapta pe ușă = editor */
-document.querySelectorAll('.door').forEach(el=>{
-  el.addEventListener('contextmenu', (e)=>{
-    e.preventDefault();
-    showEditorFor(el, e.clientX, e.clientY);
-  });
-});
-/* Clic oriunde în afara editorului = închide */
-document.addEventListener('click', (e)=>{
-  if(editor.style.display==='block' && !editor.contains(e.target) && editor.current && !editor.current.contains(e.target)){
-    hideEditor();
-  }
-});
-
-/* ====== Drag în modul Edit ====== */
-let dragging = false;
-function onMove(e){
-  if(!dragging || !editor.current) return;
-  const rect = plan.getBoundingClientRect();
-  const px = (e.touches?e.touches[0].clientX:e.clientX) - rect.left;
-  const py = (e.touches?e.touches[0].clientY:e.clientY) - rect.top;
-  const xPerc = Math.max(0, Math.min(100, px / rect.width * 100));
-  const yPerc = Math.max(0, Math.min(100, py / rect.height * 100));
-  setXY(editor.current, xPerc, yPerc);
-}
-function startDrag(){ dragging = true; plan.addEventListener('mousemove', onMove); plan.addEventListener('touchmove', onMove, {passive:false}); }
-function stopDrag(){ dragging = false; plan.removeEventListener('mousemove', onMove); plan.removeEventListener('touchmove', onMove); }
-
-/* Editor – acțiuni */
-editor.addEventListener('click', (e)=>{
-  const act = e.target.dataset.act;
-  if(!act || !editor.current) return;
-  const el = editor.current;
-  if(act==='close'){ hideEditor(); }
-  if(act==='hinge-left'){ el.dataset.hinge='left'; }
-  if(act==='hinge-right'){ el.dataset.hinge='right'; }
-  if(act==='rot--15'){ setAngle(el, getAngle(el)-15); angleInput.value=getAngle(el); }
-  if(act==='rot+15'){ setAngle(el, getAngle(el)+15); angleInput.value=getAngle(el); }
-  if(act==='drag'){ startDrag(); }
-  if(act==='center'){ setXY(el, 50, 50); }
-});
-angleInput.addEventListener('input', ()=>{
-  if(editor.current) setAngle(editor.current, parseInt(angleInput.value,10) || 0);
-});
-
-/* ====== Persistență în LINK (funcționează pe GitHub Pages) ====== */
-function collectLayout(){
-  const out = {};
-  document.querySelectorAll('.door').forEach(el=>{
-    const id = el.id;
-    const {x,y} = getXY(el);
-    out[id] = {
-      x, y, a: getAngle(el),
-      hinge: el.dataset.hinge || 'left',
-      state: state[id] || 'LOCKED'
-    };
-  });
-  return out;
-}
-function applyLayout(obj){
-  Object.keys(obj||{}).forEach(id=>{
-    const el = document.getElementById(id); if(!el) return;
-    const d = obj[id];
-    if(typeof d.x==='number') setXY(el, d.x, d.y);
-    if(typeof d.a==='number') setAngle(el, d.a);
-    if(d.hinge) el.dataset.hinge = d.hinge;
-    if(d.state) setDoorState(id, d.state);
-  });
-}
-function enc(o){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))) }
-function dec(s){ try{return JSON.parse(decodeURIComponent(escape(atob(s))))}catch(_){return null} }
-function makeLink(){
-  const url = new URL(location.href);
-  url.searchParams.set('layout', enc(collectLayout()));
-  return url.toString();
-}
-document.getElementById('btnSave').onclick = ()=>{
-  const link = makeLink();
-  history.replaceState(null,'',link);
-  alert('Link generat în bara de adrese.');
+/* Exemplu:
+const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {clientId:"web_"+Math.random().toString(16).slice(2)});
+const map = {
+  d1:{status:"locker/1/status", cmd:"locker/1/cmd"},
+  d2:{status:"locker/2/status", cmd:"locker/2/cmd"},
+  d3:{status:"locker/3/status", cmd:"locker/3/cmd"},
+  d4:{status:"locker/4/status", cmd:"locker/4/cmd"},
+  d5:{status:"locker/5/status", cmd:"locker/5/cmd"},
+  d6:{status:"locker/6/status", cmd:"locker/6/cmd"}
 };
-document.getElementById('btnCopy').onclick = async ()=>{
-  const link = makeLink();
-  try{ await navigator.clipboard.writeText(link); alert('Copiat!'); }
-  catch{ prompt('Copiază linkul:', link); }
-};
-document.getElementById('btnReset').onclick = ()=>{
-  history.replaceState(null,'',location.pathname);
-  location.reload();
-};
-(function(){
-  const b64 = new URL(location.href).searchParams.get('layout');
-  if(b64){ const layout = dec(b64); if(layout) applyLayout(layout); }
-})();
+client.on("connect",()=>{ Object.values(map).forEach(ch=> client.subscribe(ch.status)); });
+client.on("message",(t,m)=>{
+  const s = m.toString(); // 'LOCKED' | 'UNLOCKED' | 'NOPOWER'
+  for(const id in map) if(map[id].status===t) setDoorState(id, s);
+});
+// la click poți publica (după setDoorState):
+// client.publish(map[id].cmd, state[id]==='LOCKED' ? 'UNLOCK' : 'LOCK');
+*/
 </script>
 </body>
 </html>
