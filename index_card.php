@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vestiar — Control lacăte</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:980px;margin:24px auto;padding:12px}
+    h1{font-size:1.4rem;margin-bottom:.2rem}
+    .panel{border:1px solid #ddd;padding:12px;border-radius:8px;margin:12px 0;background:#fafafa}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0}
+    button{padding:8px 12px;border-radius:6px;border:1px solid #bbb;background:#fff;cursor:pointer}
+    button.primary{background:#0b84ff;color:#fff;border-color:#0764c6}
+    input[type="text"]{padding:8px;border:1px solid #ccc;border-radius:6px;width:240px}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;font-size:0.9rem}
+    pre{white-space:pre-wrap;background:#111;color:#fff;padding:8px;border-radius:6px;overflow:auto}
+    .small{font-size:0.85rem;color:#666}
+  </style>
+</head>
+<body>
+  <h1>Vestiar — Control lacăte</h1>
+  <div class="panel">
+    <div class="row">
+      <label class="small">Broker WSS:</label>
+      <input id="broker" type="text" value="wss://broker.emqx.io:8084/mqtt" />
+      <label class="small">Door ID:</label>
+      <input id="door" type="text" value="1" style="width:60px"/>
+      <button id="btnConnect" class="primary">Connect</button>
+      <span id="connStatus" class="small">disconnected</span>
+    </div>
+
+    <div class="row">
+      <strong>Status:</strong>
+      <span id="lockStatus">---</span>
+      <button id="btnUnlock" class="primary">UNLOCK (web)</button>
+      <button id="btnLock">LOCK (web)</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Gestionare carduri</h3>
+    <div class="row">
+      <input id="cardAdd" type="text" placeholder="introdu card24 (ex: 14890498)" />
+      <button id="btnAdd">Adaugă card</button>
+      <input id="cardRemove" type="text" placeholder="sterge card24" />
+      <button id="btnRemove">Șterge card</button>
+      <button id="btnList">Cere lista</button>
+    </div>
+    <div id="cardsArea" class="small">lista carduri: —</div>
+  </div>
+
+  <div class="panel">
+    <h3>Evenimente live</h3>
+    <div class="row">
+      <button id="btnLogs">Cere ultimele 50 loguri</button>
+      <input id="logsLines" type="text" value="50" style="width:70px"/>
+    </div>
+    <div id="events" style="max-height:300px;overflow:auto;font-size:0.9rem"></div>
+  </div>
+
+  <script>
+    let client = null;
+    let baseTopic = null;
+    const statusEl = document.getElementById('lockStatus');
+    const connEl = document.getElementById('connStatus');
+
+    function setConnState(connected){
+      connEl.textContent = connected ? 'connected' : 'disconnected';
+      connEl.style.color = connected ? 'green' : 'red';
+    }
+
+    function appendEvent(text){
+      const ev = document.createElement('div');
+      ev.innerHTML = '<small>'+new Date().toLocaleTimeString()+'</small> — '+text;
+      const area = document.getElementById('events');
+      area.prepend(ev);
+      // keep only 200 items
+      while(area.childNodes.length>200) area.removeChild(area.lastChild);
+    }
+
+    function mqttTopic(t){ return baseTopic ? (baseTopic + t) : t; }
+
+    document.getElementById('btnConnect').onclick = () => {
+      const broker = document.getElementById('broker').value.trim();
+      const door = document.getElementById('door').value.trim() || '1';
+      baseTopic = 'locker/' + door + '/';
+      if(client && client.connected){
+        appendEvent('Already connected — re-subscribe');
+        subscribeAll();
+        return;
+      }
+      appendEvent('Connecting to ' + broker + ' ...');
+      // MQTT connect
+      try {
+        client = mqtt.connect(broker, { reconnectPeriod: 2000 });
+      } catch(e){
+        appendEvent('Connect error: ' + e.message);
+        return;
+      }
+      client.on('connect', () => {
+        setConnState(true);
+        appendEvent('MQTT connected');
+        subscribeAll();
+        // ask status/list
+        client.publish(mqttTopic('cards/list/get'), '');
+        client.publish(mqttTopic('status/get') || mqttTopic('status'), '');
+      });
+      client.on('reconnect', () => setConnState(false));
+      client.on('offline', () => setConnState(false));
+      client.on('end', () => setConnState(false));
+      client.on('error', (err) => { appendEvent('MQTT err: '+err.message); setConnState(false); });
+
+      client.on('message', (topic, payload) => {
+        const msg = payload.toString();
+        appendEvent('<b>IN</b> ' + topic + ' → ' + msg);
+        // topics we expect:
+        // locker/X/status  -> JSON {"lock":"LOCKED"/"UNLOCKED"}
+        // locker/X/event  -> event JSON or short text
+        // locker/X/cards/list -> JSON array
+        // locker/X/logs -> JSON array
+        try {
+          if (topic === mqttTopic('status')) {
+            try {
+              const j = JSON.parse(msg);
+              if (j.lock) statusEl.textContent = j.lock;
+            } catch(e){ statusEl.textContent = msg; }
+          } else if (topic === mqttTopic('event') || topic === mqttTopic('event/new')) {
+            // display raw
+            appendEvent('<i>event</i> ' + msg);
+          } else if (topic === mqttTopic('cards/list')) {
+            // parse array
+            try {
+              const arr = JSON.parse(msg);
+              if (Array.isArray(arr)) {
+                document.getElementById('cardsArea').textContent = 'Cards: ' + arr.join(', ');
+              } else {
+                document.getElementById('cardsArea').textContent = JSON.stringify(arr);
+              }
+            } catch(e){
+              document.getElementById('cardsArea').textContent = msg;
+            }
+          } else if (topic === mqttTopic('logs')) {
+            // logs as array -> pretty print last
+            try {
+              const arr = JSON.parse(msg);
+              if (Array.isArray(arr)) {
+                arr.reverse().forEach(o => appendEvent('<small>LOG</small> ' + JSON.stringify(o)));
+              }
+            } catch(e){
+              appendEvent('logs: ' + msg);
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
+
+      function subscribeAll(){
+        client.subscribe(mqttTopic('status'));
+        client.subscribe(mqttTopic('event'));
+        client.subscribe(mqttTopic('event/new'));
+        client.subscribe(mqttTopic('cards/list'));
+        client.subscribe(mqttTopic('logs'));
+        setConnState(true);
+      }
+    }
+
+    // UNLOCK / LOCK via web
+    document.getElementById('btnUnlock').onclick = () => {
+      if (!client || !client.connected) return appendEvent('not connected');
+      client.publish(mqttTopic('cmd'), 'UNLOCK');
+      appendEvent('Sent UNLOCK');
+    };
+    document.getElementById('btnLock').onclick = () => {
+      if (!client || !client.connected) return appendEvent('not connected');
+      client.publish(mqttTopic('cmd'), 'LOCK');
+      appendEvent('Sent LOCK');
+    };
+
+    // Cards management
+    document.getElementById('btnAdd').onclick = () => {
+      const v = document.getElementById('cardAdd').value.trim();
+      if (!v) return appendEvent('introdu card');
+      client.publish(mqttTopic('cards/add'), v);
+      appendEvent('publish cards/add → ' + v);
+    };
+    document.getElementById('btnRemove').onclick = () => {
+      const v = document.getElementById('cardRemove').value.trim();
+      if (!v) return appendEvent('introdu card to remove');
+      client.publish(mqttTopic('cards/remove'), v);
+      appendEvent('publish cards/remove → ' + v);
+    };
+    document.getElementById('btnList').onclick = () => {
+      client.publish(mqttTopic('cards/list/get'), '');
+      appendEvent('Requested cards list');
+    };
+
+    // Logs
+    document.getElementById('btnLogs').onclick = () => {
+      const lines = document.getElementById('logsLines').value || '50';
+      client.publish(mqttTopic('logs/get'), 'lines=' + lines);
+      appendEvent('Requested logs lines=' + lines);
+    };
+
+    // click on events area to clear
+    document.getElementById('events').onclick = () => { document.getElementById('events').innerHTML = ''; };
+  </script>
+</body>
+</html>
