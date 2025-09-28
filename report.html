@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vestiar — Raport intrări</title>
+
+  <!-- mqtt.js -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- Chart.js for a simple chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root { --bg:#f7f8fb; --card:#fff; --accent:#0b84ff; --muted:#667; --pad:14px; }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:#111;margin:0;padding:20px}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+    h1{margin:0;font-size:1.2rem}
+    .layout{display:grid;grid-template-columns:360px 1fr;gap:14px}
+    .card{background:var(--card);padding:var(--pad);border-radius:10px;box-shadow:0 6px 18px rgba(12,20,40,0.04)}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+    label.small{font-size:0.85rem;color:var(--muted);margin-right:6px}
+    input, select, button{padding:8px;border-radius:6px;border:1px solid #e0e6ef}
+    button.primary{background:var(--accent);color:white;border:none}
+    .muted{color:var(--muted);font-size:0.9rem}
+    #eventsTable{width:100%;border-collapse:collapse;margin-top:8px}
+    #eventsTable th,#eventsTable td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:0.9rem}
+    #eventsTable th{background:#fafcff;position:sticky;top:0}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#f0f6ff;color:var(--accent);font-weight:600}
+    .flex{display:flex;gap:10px;align-items:center}
+    .filters{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+    .smallbtn{padding:6px 8px;border-radius:6px;border:1px solid #ddd;background:#fff}
+    .right{margin-left:auto}
+    #chartWrap{height:160px}
+    .no-data{color:var(--muted);padding:20px;text-align:center}
+    @media (max-width:900px){ .layout{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vestiar — Raport intrări</h1>
+    <div class="muted">Pagina de raport (MQTT)</div>
+  </header>
+
+  <div class="layout">
+    <!-- Left panel: controls -->
+    <div class="card">
+      <div class="row">
+        <label class="small">Broker WSS</label>
+        <input id="broker" type="text" value="wss://broker.emqx.io:8084/mqtt" style="flex:1" />
+      </div>
+
+      <div class="row">
+        <label class="small">Door ID</label>
+        <input id="door" type="text" value="1" style="width:80px"/>
+        <button id="btnConnect" class="primary">Connect</button>
+        <span id="connStatus" class="muted">disconnected</span>
+      </div>
+
+      <hr/>
+
+      <div>
+        <div class="muted">Cere istoricul</div>
+        <div class="row">
+          <label class="small">Linii</label>
+          <input id="lines" type="number" min="1" value="200" style="width:100px" />
+          <button id="btnGet" class="smallbtn">Cere logs</button>
+          <span class="right muted">Ultima actualizare: <span id="lastFetch">—</span></span>
+        </div>
+        <div class="muted" style="font-size:0.85rem">Events live sunt afișate automat.</div>
+      </div>
+
+      <hr/>
+
+      <div>
+        <div class="muted">Filtre rapid</div>
+        <div class="filters">
+          <select id="filterType"><option value="">(toate tipurile)</option><option value="CARD">CARD</option><option value="KEYPAD">KEYPAD</option><option value="MQTT">MQTT</option><option value="AUTO">AUTO</option></select>
+          <input id="filterName" type="text" placeholder="nume (Ion Popescu)" />
+          <input id="filterCard" type="text" placeholder="card (14890498)" style="width:130px"/>
+          <button id="btnFilter" class="smallbtn">Aplică</button>
+          <button id="btnClearFilter" class="smallbtn">Resetează</button>
+        </div>
+      </div>
+
+      <hr/>
+
+      <div>
+        <div class="muted">Export</div>
+        <div class="row">
+          <button id="btnExportCsv" class="smallbtn">Export CSV</button>
+          <button id="btnExportJson" class="smallbtn">Export JSON</button>
+          <button id="btnClearLogs" class="smallbtn">Clear local view</button>
+        </div>
+      </div>
+
+      <hr/>
+
+      <div>
+        <div class="muted">Sumar</div>
+        <div id="summary" style="margin-top:8px">
+          <div><span class="pill" id="totalCount">0</span> total</div>
+          <div style="margin-top:8px">Granted: <strong id="granted">0</strong> — Denied: <strong id="denied">0</strong></div>
+        </div>
+        <div id="chartWrap"><canvas id="chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Right panel: table -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div class="muted">Tabel evenimente</div>
+        <div class="right" style="margin-left:auto">
+          <small class="muted">Click pe rând pentru detalii</small>
+        </div>
+      </div>
+
+      <div id="tableContainer" style="max-height:650px;overflow:auto">
+        <table id="eventsTable">
+          <thead>
+            <tr>
+              <th>TS</th>
+              <th>Tip</th>
+              <th>Sursă</th>
+              <th>Card</th>
+              <th>Nume</th>
+              <th>OK</th>
+              <th>Extra</th>
+            </tr>
+          </thead>
+          <tbody id="eventsBody"></tbody>
+        </table>
+        <div id="noData" class="no-data" style="display:none">Nu există date (cere logs sau așteaptă evenimente)</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let client = null;
+    let baseTopic = null;
+    let logs = []; // array of objects (most recent last)
+    let chart = null;
+
+    const brokerEl = document.getElementById('broker');
+    const doorEl = document.getElementById('door');
+    const btnConnect = document.getElementById('btnConnect');
+    const connStatus = document.getElementById('connStatus');
+    const btnGet = document.getElementById('btnGet');
+    const linesEl = document.getElementById('lines');
+    const lastFetchEl = document.getElementById('lastFetch');
+
+    const eventsBody = document.getElementById('eventsBody');
+    const noDataEl = document.getElementById('noData');
+    const totalCountEl = document.getElementById('totalCount');
+    const grantedEl = document.getElementById('granted');
+    const deniedEl = document.getElementById('denied');
+
+    function setConn(connected){
+      connStatus.textContent = connected ? 'connected' : 'disconnected';
+      connStatus.style.color = connected ? 'green' : 'red';
+    }
+
+    function mqttTopic(t){ return baseTopic ? (baseTopic + t) : t; }
+
+    btnConnect.onclick = () => {
+      const broker = brokerEl.value.trim();
+      const door = doorEl.value.trim() || '1';
+      baseTopic = 'locker/' + door + '/';
+      if (client && client.connected) {
+        setConn(true);
+        subscribeAll();
+        return;
+      }
+      client = mqtt.connect(broker, { reconnectPeriod: 2000 });
+      client.on('connect', () => {
+        setConn(true);
+        subscribeAll();
+        appendStatus('MQTT connected');
+      });
+      client.on('reconnect', () => setConn(false));
+      client.on('offline', () => setConn(false));
+      client.on('error', (err) => { appendStatus('MQTT err: ' + err.message); setConn(false); });
+      client.on('message', (topic, payload) => {
+        const msg = payload.toString();
+        // auto-append raw events
+        if (topic === mqttTopic('event') || topic === mqttTopic('event/new')) {
+          try {
+            const obj = JSON.parse(msg);
+            pushLog(obj);
+            render();
+          } catch(e) {
+            // if it's plain text, create small object
+            pushLog({ ts: Date.now(), type: 'TEXT', source: 'event', raw: msg });
+            render();
+          }
+        } else if (topic === mqttTopic('logs')) {
+          // array of items
+          try {
+            const arr = JSON.parse(msg);
+            if (Array.isArray(arr)) {
+              logs = arr.slice(); // replace
+              lastFetchEl.textContent = new Date().toLocaleString();
+              render();
+            } else {
+              appendStatus('Logs payload unexpected');
+            }
+          } catch(e) {
+            appendStatus('Logs parse error');
+          }
+        } else if (topic === mqttTopic('status')) {
+          // status messages (ignored here)
+        } else {
+          // ignore other topics for now
+        }
+      });
+    };
+
+    function subscribeAll(){
+      client.subscribe(mqttTopic('event'));
+      client.subscribe(mqttTopic('event/new'));
+      client.subscribe(mqttTopic('logs'));
+      client.subscribe(mqttTopic('status'));
+    }
+
+    function appendStatus(s){
+      const el = document.createElement('div');
+      el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + s;
+      // small transient log in browser console area (we reuse events area)
+      const area = document.getElementById('eventsBody');
+      console.log(s);
+    }
+
+    btnGet.onclick = () => {
+      if (!client || !client.connected) return alert('Conectează-te mai întâi la broker.');
+      const lines = Math.max(1, parseInt(linesEl.value||'200',10));
+      client.publish(mqttTopic('logs/get'), 'lines=' + lines);
+      appendStatus('Requested logs lines=' + lines);
+    };
+
+    // push a new event at the beginning so table shows newest first
+    function pushLog(obj){
+      // normalize fields: ensure ts, type, source, ok, card24, first/last
+      const norm = {};
+      norm.ts = obj.ts || (obj.timestamp || Date.now());
+      // try numeric ts if it's millis string -> keep as-is
+      // if it's a number-like string, convert
+      if (typeof norm.ts === 'string' && /^\d+$/.test(norm.ts)) norm.ts = parseInt(norm.ts,10);
+
+      norm.type = obj.type || (obj.eventType || 'EVENT');
+      norm.source = obj.source || obj.source || (obj.source ? obj.source : (obj.type=='CARD'?'reader':'unknown'));
+      norm.ok = (obj.ok === true) || (obj.ok === 'true') ? true : false;
+      norm.card24 = obj.card24 || obj.card || (obj.cardNumber ? obj.cardNumber : null);
+      norm.first = obj.first || obj.prenume || '';
+      norm.last  = obj.last  || obj.nume || '';
+      norm.extra = obj.extra || obj.raw || obj.extra || '';
+      logs.unshift(norm); // newest first
+      // cap logs in browser to avoid memory growth
+      if (logs.length > 5000) logs.pop();
+      updateSummary();
+    }
+
+    // render table from logs with filters
+    function render(){
+      eventsBody.innerHTML = '';
+      if (!logs || logs.length === 0) {
+        noDataEl.style.display = 'block';
+        totalCountEl.textContent = '0';
+        grantedEl.textContent = '0';
+        deniedEl.textContent = '0';
+        updateChart(0,0);
+        return;
+      }
+      noDataEl.style.display = 'none';
+
+      // gather filters
+      const typeF = document.getElementById('filterType').value;
+      const nameF = document.getElementById('filterName').value.trim().toLowerCase();
+      const cardF = document.getElementById('filterCard').value.trim();
+
+      let shown = 0;
+      let granted = 0;
+      let denied = 0;
+
+      for (let i = 0; i < logs.length; ++i) {
+        const r = logs[i];
+        // simple filters
+        if (typeF && String(r.type) !== typeF) continue;
+        if (cardF && String(r.card24) !== cardF) continue;
+        if (nameF) {
+          const fullname = ((r.first||'') + ' ' + (r.last||'')).toLowerCase();
+          if (!fullname.includes(nameF) && !(String(r.card24||'')).includes(nameF)) continue;
+        }
+
+        const tr = document.createElement('tr');
+        const tsTxt = (typeof r.ts === 'number') ? new Date(r.ts).toLocaleString() : String(r.ts);
+        tr.innerHTML = `<td>${tsTxt}</td>
+                        <td>${escapeHtml(String(r.type||''))}</td>
+                        <td>${escapeHtml(String(r.source||''))}</td>
+                        <td>${escapeHtml(String(r.card24||''))}</td>
+                        <td>${escapeHtml(((r.first||'')+' '+(r.last||'')).trim())}</td>
+                        <td>${r.ok ? '<strong style="color:green">OK</strong>' : '<span style="color:#c00">NO</span>'}</td>
+                        <td>${escapeHtml(String(r.extra||''))}</td>`;
+        // click shows full JSON
+        tr.onclick = () => alert(JSON.stringify(r, null, 2));
+        eventsBody.appendChild(tr);
+
+        shown++;
+        if (r.ok) granted++; else denied++;
+      }
+      totalCountEl.textContent = String(shown);
+      grantedEl.textContent = String(granted);
+      deniedEl.textContent = String(denied);
+      updateChart(granted, denied);
+    }
+
+    function updateSummary(){
+      // compute totals quickly
+      let g=0,d=0;
+      for (let i=0;i<logs.length;i++){ if (logs[i].ok) g++; else d++; }
+      totalCountEl.textContent = String(logs.length);
+      grantedEl.textContent = String(g);
+      deniedEl.textContent = String(d);
+      updateChart(g,d);
+    }
+
+    // filters
+    document.getElementById('btnFilter').onclick = render;
+    document.getElementById('btnClearFilter').onclick = () => {
+      document.getElementById('filterType').value = '';
+      document.getElementById('filterName').value = '';
+      document.getElementById('filterCard').value = '';
+      render();
+    };
+
+    // export CSV
+    document.getElementById('btnExportCsv').onclick = () => {
+      if (!logs || logs.length===0) return alert('Nu sunt date pentru export');
+      const rows = [];
+      rows.push(['ts','type','source','card24','first','last','ok','extra'].join(','));
+      for (let i=0;i<logs.length;i++){
+        const r = logs[i];
+        rows.push([csvSafe(r.ts),csvSafe(r.type),csvSafe(r.source),csvSafe(r.card24),csvSafe(r.first),csvSafe(r.last),csvSafe(r.ok),csvSafe(r.extra)].join(','));
+      }
+      downloadText(rows.join('\n'), 'vestiar_logs.csv');
+    };
+
+    document.getElementById('btnExportJson').onclick = () => {
+      if (!logs || logs.length===0) return alert('Nu sunt date pentru export');
+      downloadText(JSON.stringify(logs, null, 2), 'vestiar_logs.json');
+    };
+
+    document.getElementById('btnClearLogs').onclick = () => {
+      logs = [];
+      render();
+    };
+
+    function csvSafe(x){
+      if (x===null || typeof x === 'undefined') return '';
+      const s = String(x).replace(/"/g,'""');
+      return `"${s}"`;
+    }
+
+    function downloadText(text, fname){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      a.download = fname;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // simple chart
+    const ctx = document.getElementById('chart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels:['Granted','Denied'], datasets:[{ data: [0,0], backgroundColor:['#2ecc71','#e74c3c'] }] },
+      options: { plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false }
+    });
+
+    function updateChart(g,d){
+      if (!chart) return;
+      chart.data.datasets[0].data = [g,d];
+      chart.update();
+    }
+
+    function escapeHtml(s){
+      if (!s) return '';
+      return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    }
+
+    // initial empty render
+    render();
+  </script>
+</body>
+</html>
