@@ -1,260 +1,211 @@
 <!doctype html>
 <html lang="ro">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vestiar – 6 uși • MQTT live</title>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<style>
-  :root{
-    --bg:#0b1220; --wall:#e5e7eb;
-    --closed:#22c55e;  /* verde  = ÎNCHIS/LOCKED */
-    --open:#ef4444;    /* roșu   = DESCHIS/UNLOCKED */
-    --nopower:#6b7280; /* gri    = Fără alimentare / OFFLINE */
-    --hinge:#94a3b8;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:#fff;font-family:Arial,Helvetica,sans-serif}
-  .wrap{max-width:1100px;margin:0 auto;padding:16px}
-  h1{font-size:20px;margin:0 0 10px}
-
-  .legend{font-size:14px;opacity:.9;margin:8px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .legend span{display:inline-block;padding:2px 8px;border-radius:6px}
-  .legend .c{background:var(--closed)}
-  .legend .o{background:var(--open)}
-  .legend .p{background:var(--nopower)}
-  .legend .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
-  .conn{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #334155;border-radius:8px;background:#0f172a}
-  .conn .dot{background:#ef4444}
-  .conn.ok .dot{background:#22c55e}
-
-  .plan{
-    position:relative; width:100%;
-    border:10px solid var(--wall); border-radius:12px; overflow:hidden;
-    background:#0b1220; user-select:none;
-  }
-  .plan-img{ display:block; width:100%; height:auto; }
-  .overlay{ position:absolute; inset:0; pointer-events:auto; }
-
-  /* UȘA (grup) */
-  .door{
-    position:absolute; left:0; top:0;
-    --x: 0%; --y: 0%; --a: 0;
-    transform: translate(var(--x), var(--y)) rotate(calc(var(--a) * 1deg));
-    transform-origin: 0 0;
-    width: 84px; height: 40px;
-    cursor:pointer;
-  }
-  .door .hinge{
-    position:absolute; top:6px; width:8px; height:20px;
-    background:var(--hinge); border-radius:4px;
-  }
-  .door .leaf{
-    position:absolute; top:8px; width:72px; height:10px;
-    border:2px solid #000; border-radius:6px; background:var(--closed);
-    transition: transform .25s ease, background .2s ease, box-shadow .2s ease, opacity .2s ease;
-    transform-origin: left center; box-shadow:0 0 0 rgba(0,0,0,0);
-  }
-  .door .label{
-    position:absolute; left:-20px; top:30px;
-    font-size:12px; font-weight:bold;
-    color:#aad1ff;
-    text-shadow:0 1px 2px rgba(0,0,0,.5);
-    white-space:pre;
-  }
-
-  .door[data-hinge="left"] .hinge{ left:-6px }
-  .door[data-hinge="right"] .hinge{ right:-6px }
-  .door[data-hinge="left"]  .leaf{ left:0;  transform-origin:left  center }
-  .door[data-hinge="right"] .leaf{ right:0; transform-origin:right center }
-
-  /* unghi de deschidere (60° implicit) */
-  .door[data-hinge="left"][data-swing="down"].open .leaf{ transform: rotate(60deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="left"][data-swing="up"].open   .leaf{ transform: rotate(-60deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"][data-swing="down"].open .leaf{ transform: rotate(-60deg); background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-  .door[data-hinge="right"][data-swing="up"].open   .leaf{ transform: rotate(60deg);  background:var(--open); box-shadow:0 6px 10px rgba(0,0,0,.45) }
-
-  /* GRI pentru OFFLINE sau fără alimentare */
-  .door.nopower .leaf,
-  .door.offline .leaf{ background:var(--nopower); }
-
-  /* opțional: arată vizual că nu se poate apăsa când e offline */
-  .door.offline { cursor: not-allowed; opacity: 0.85; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vestiar — Control lacăte</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:980px;margin:24px auto;padding:12px}
+    h1{font-size:1.4rem;margin-bottom:.2rem}
+    .panel{border:1px solid #ddd;padding:12px;border-radius:8px;margin:12px 0;background:#fafafa}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0}
+    button{padding:8px 12px;border-radius:6px;border:1px solid #bbb;background:#fff;cursor:pointer}
+    button.primary{background:#0b84ff;color:#fff;border-color:#0764c6}
+    input[type="text"]{padding:8px;border:1px solid #ccc;border-radius:6px;width:240px}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;font-size:0.9rem}
+    pre{white-space:pre-wrap;background:#111;color:#fff;padding:8px;border-radius:6px;overflow:auto}
+    .small{font-size:0.85rem;color:#666}
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Vestiar – control uși (MQTT)</h1>
-  <a href="programari.html" target="_blank" style="margin-left:8px;background:#0f172a;color:#fff;border:1px solid #334155;border-radius:8px;padding:6px 10px;text-decoration:none">
-    ↗ Programări (orar)
-  </a>
+  <h1>Vestiar — Control lacăte</h1>
+  <div class="panel">
+    <div class="row">
+      <label class="small">Broker WSS:</label>
+      <input id="broker" type="text" value="wss://broker.emqx.io:8084/mqtt" />
+      <label class="small">Door ID:</label>
+      <input id="door" type="text" value="1" style="width:60px"/>
+      <button id="btnConnect" class="primary">Connect</button>
+      <span id="connStatus" class="small">disconnected</span>
+    </div>
 
-  <div class="legend">
-    <span class="c">ÎNCHIS (verde)</span>
-    <span class="o">DESCHIS (roșu)</span>
-    <span class="p">Fără alimentare / OFFLINE (gri)</span>
-    <span class="conn" id="conn"><span class="dot"></span><span id="connText">Se conectează la MQTT…</span></span>
-  </div>
-
-  <div class="plan" id="plan">
-    <img id="planImg" class="plan-img" src="vestiar.jpg" alt="Plan Vestiar">
-    <div class="overlay" id="overlay">
-      <!-- UȘI – poziții inițiale (le ajustezi în CONFIG mai jos) -->
-      <div class="door offline" id="d1" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 1</div></div>
-      <div class="door offline" id="d2" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 2</div></div>
-      <div class="door offline" id="d3" data-hinge="left"  data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 3</div></div>
-      <div class="door offline" id="d4" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 4</div></div>
-      <div class="door offline" id="d5" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 5</div></div>
-      <div class="door offline" id="d6" data-hinge="right" data-swing="up"><div class="hinge"></div><div class="leaf"></div><div class="label">Ușa 6</div></div>
+    <div class="row">
+      <strong>Status:</strong>
+      <span id="lockStatus">---</span>
+      <button id="btnUnlock" class="primary">UNLOCK (web)</button>
+      <button id="btnLock">LOCK (web)</button>
     </div>
   </div>
-</div>
 
-<script>
-/* ===========================
-   1) CONFIG poziții (procente)
-=========================== */
-const CONFIG = {
-  d1: { x: 137,  y: 220,  a: 0 },
-  d2: { x: 270,  y: 220,  a: 0 },
-  d3: { x: 430,  y: 220,  a: 0 },
-  d4: { x: 1100, y: 2700, a: 90 },
-  d5: { x: 1100, y: 3000, a: 90 },
-  d6: { x: 1100, y: 3360, a: 90 }
-};
-function applyConfig(){
-  Object.keys(CONFIG).forEach(id=>{
-    const el = document.getElementById(id);
-    if(!el) return;
-    const {x,y,a} = CONFIG[id];
-    el.style.setProperty('--x', (Number(x)||0) + '%');
-    el.style.setProperty('--y', (Number(y)||0) + '%');
-    el.style.setProperty('--a', (Number(a)||0));
-  });
-}
-applyConfig();
+  <div class="panel">
+    <h3>Gestionare carduri</h3>
+    <div class="row">
+      <input id="cardAdd" type="text" placeholder="introdu card24 (ex: 14890498)" />
+      <button id="btnAdd">Adaugă card</button>
+      <input id="cardRemove" type="text" placeholder="sterge card24" />
+      <button id="btnRemove">Șterge card</button>
+      <button id="btnList">Cere lista</button>
+    </div>
+    <div id="cardsArea" class="small">lista carduri: —</div>
+  </div>
 
-/* ===========================
-   2) MQTT – JSON status & comenzi
-=========================== */
-const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
-const options = {
-  clientId: "web_" + Math.random().toString(16).slice(2),
-  clean: true,
-  reconnectPeriod: 2000,
-};
-const client = mqtt.connect(brokerUrl, options);
+  <div class="panel">
+    <h3>Evenimente live</h3>
+    <div class="row">
+      <button id="btnLogs">Cere ultimele 50 loguri</button>
+      <input id="logsLines" type="text" value="50" style="width:70px"/>
+    </div>
+    <div id="events" style="max-height:300px;overflow:auto;font-size:0.9rem"></div>
+  </div>
 
-const connBadge = document.getElementById('conn');
-const connText  = document.getElementById('connText');
+  <script>
+    let client = null;
+    let baseTopic = null;
+    const statusEl = document.getElementById('lockStatus');
+    const connEl = document.getElementById('connStatus');
 
-client.on('connect', () => {
-  connBadge.classList.add('ok');
-  connText.textContent = 'MQTT conectat';
-  [1,2,3,4,5,6].forEach(i=>{
-    client.subscribe(`locker/${i}/status`, {qos:0});
-  });
-});
-client.on('reconnect', ()=>{ connBadge.classList.remove('ok'); connText.textContent = 'Reconectare MQTT…'; });
-client.on('close', ()=>{ connBadge.classList.remove('ok'); connText.textContent = 'MQTT deconectat'; });
-client.on('error', (e)=>{ connBadge.classList.remove('ok'); connText.textContent = 'Eroare MQTT'; console.error(e); });
+    function setConnState(connected){
+      connEl.textContent = connected ? 'connected' : 'disconnected';
+      connEl.style.color = connected ? 'green' : 'red';
+    }
 
-/* map uși */
-const DOORS = {
-  1: { el: document.getElementById('d1'), cmd: 'locker/1/cmd' },
-  2: { el: document.getElementById('d2'), cmd: 'locker/2/cmd' },
-  3: { el: document.getElementById('d3'), cmd: 'locker/3/cmd' },
-  4: { el: document.getElementById('d4'), cmd: 'locker/4/cmd' },
-  5: { el: document.getElementById('d5'), cmd: 'locker/5/cmd' },
-  6: { el: document.getElementById('d6'), cmd: 'locker/6/cmd' },
-};
+    function appendEvent(text){
+      const ev = document.createElement('div');
+      ev.innerHTML = '<small>'+new Date().toLocaleTimeString()+'</small> — '+text;
+      const area = document.getElementById('events');
+      area.prepend(ev);
+      // keep only 200 items
+      while(area.childNodes.length>200) area.removeChild(area.lastChild);
+    }
 
-/* stare + „last seen” pentru offline */
-const OFFLINE_MS = 20000; // după 20s fără status -> offline
-const state = {
-  1:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
-  2:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
-  3:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
-  4:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
-  5:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
-  6:{lock:'LOCKED',door:'CLOSED',power:'ON', last:0},
-};
+    function mqttTopic(t){ return baseTopic ? (baseTopic + t) : t; }
 
-function setOffline(id, yes){
-  const d = DOORS[id]; if(!d) return;
-  d.el.classList.toggle('offline', !!yes);
-  if (yes) {
-    // textul etichetei subliniază offline
-    const label = d.el.querySelector('.label');
-    label.textContent = `Ușa ${id}\nOFFLINE`;
-    d.el.classList.remove('open'); // nu animăm
-  }
-}
+    document.getElementById('btnConnect').onclick = () => {
+      const broker = document.getElementById('broker').value.trim();
+      const door = document.getElementById('door').value.trim() || '1';
+      baseTopic = 'locker/' + door + '/';
+      if(client && client.connected){
+        appendEvent('Already connected — re-subscribe');
+        subscribeAll();
+        return;
+      }
+      appendEvent('Connecting to ' + broker + ' ...');
+      // MQTT connect
+      try {
+        client = mqtt.connect(broker, { reconnectPeriod: 2000 });
+      } catch(e){
+        appendEvent('Connect error: ' + e.message);
+        return;
+      }
+      client.on('connect', () => {
+        setConnState(true);
+        appendEvent('MQTT connected');
+        subscribeAll();
+        // ask status/list
+        client.publish(mqttTopic('cards/list/get'), '');
+        client.publish(mqttTopic('status/get') || mqttTopic('status'), '');
+      });
+      client.on('reconnect', () => setConnState(false));
+      client.on('offline', () => setConnState(false));
+      client.on('end', () => setConnState(false));
+      client.on('error', (err) => { appendEvent('MQTT err: '+err.message); setConnState(false); });
 
-function renderDoor(id){
-  const s = state[id]; const d = DOORS[id]; if(!d) return;
-  const el = d.el;
+      client.on('message', (topic, payload) => {
+        const msg = payload.toString();
+        appendEvent('<b>IN</b> ' + topic + ' → ' + msg);
+        // topics we expect:
+        // locker/X/status  -> JSON {"lock":"LOCKED"/"UNLOCKED"}
+        // locker/X/event  -> event JSON or short text
+        // locker/X/cards/list -> JSON array
+        // locker/X/logs -> JSON array
+        try {
+          if (topic === mqttTopic('status')) {
+            try {
+              const j = JSON.parse(msg);
+              if (j.lock) statusEl.textContent = j.lock;
+            } catch(e){ statusEl.textContent = msg; }
+          } else if (topic === mqttTopic('event') || topic === mqttTopic('event/new')) {
+            // display raw
+            appendEvent('<i>event</i> ' + msg);
+          } else if (topic === mqttTopic('cards/list')) {
+            // parse array
+            try {
+              const arr = JSON.parse(msg);
+              if (Array.isArray(arr)) {
+                document.getElementById('cardsArea').textContent = 'Cards: ' + arr.join(', ');
+              } else {
+                document.getElementById('cardsArea').textContent = JSON.stringify(arr);
+              }
+            } catch(e){
+              document.getElementById('cardsArea').textContent = msg;
+            }
+          } else if (topic === mqttTopic('logs')) {
+            // logs as array -> pretty print last
+            try {
+              const arr = JSON.parse(msg);
+              if (Array.isArray(arr)) {
+                arr.reverse().forEach(o => appendEvent('<small>LOG</small> ' + JSON.stringify(o)));
+              }
+            } catch(e){
+              appendEvent('logs: ' + msg);
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
 
-  // offline?
-  const isOff = (Date.now() - s.last > OFFLINE_MS);
-  setOffline(id, isOff);
+      function subscribeAll(){
+        client.subscribe(mqttTopic('status'));
+        client.subscribe(mqttTopic('event'));
+        client.subscribe(mqttTopic('event/new'));
+        client.subscribe(mqttTopic('cards/list'));
+        client.subscribe(mqttTopic('logs'));
+        setConnState(true);
+      }
+    }
 
-  // reset
-  el.classList.remove('nopower');
-  if (s.power === 'OFF') el.classList.add('nopower');
+    // UNLOCK / LOCK via web
+    document.getElementById('btnUnlock').onclick = () => {
+      if (!client || !client.connected) return appendEvent('not connected');
+      client.publish(mqttTopic('cmd'), 'UNLOCK');
+      appendEvent('Sent UNLOCK');
+    };
+    document.getElementById('btnLock').onclick = () => {
+      if (!client || !client.connected) return appendEvent('not connected');
+      client.publish(mqttTopic('cmd'), 'LOCK');
+      appendEvent('Sent LOCK');
+    };
 
-  // open anim
-  el.classList.toggle('open', s.lock === 'UNLOCKED' && !isOff);
+    // Cards management
+    document.getElementById('btnAdd').onclick = () => {
+      const v = document.getElementById('cardAdd').value.trim();
+      if (!v) return appendEvent('introdu card');
+      client.publish(mqttTopic('cards/add'), v);
+      appendEvent('publish cards/add → ' + v);
+    };
+    document.getElementById('btnRemove').onclick = () => {
+      const v = document.getElementById('cardRemove').value.trim();
+      if (!v) return appendEvent('introdu card to remove');
+      client.publish(mqttTopic('cards/remove'), v);
+      appendEvent('publish cards/remove → ' + v);
+    };
+    document.getElementById('btnList').onclick = () => {
+      client.publish(mqttTopic('cards/list/get'), '');
+      appendEvent('Requested cards list');
+    };
 
-  // label
-  if(!isOff){
-    const label = el.querySelector('.label');
-    label.textContent = `Ușa ${id}\n${s.lock} / ${s.door}${s.power==='OFF' ? ' / NOPWR' : ''}`;
-  }
-}
+    // Logs
+    document.getElementById('btnLogs').onclick = () => {
+      const lines = document.getElementById('logsLines').value || '50';
+      client.publish(mqttTopic('logs/get'), 'lines=' + lines);
+      appendEvent('Requested logs lines=' + lines);
+    };
 
-/* primire status JSON */
-client.on('message', (topic, payload) => {
-  try{
-    const txt = payload.toString();
-    const data = JSON.parse(txt);
-    const parts = topic.split('/');   // locker/X/status
-    const id = parseInt(parts[1],10);
-    if(!state[id]) return;
-
-    if(data.lock)  state[id].lock  = data.lock.toUpperCase();
-    if(data.door)  state[id].door  = data.door.toUpperCase();
-    if(data.power) state[id].power = data.power.toUpperCase();
-    state[id].last = Date.now();      // am primit ceva acum
-
-    renderDoor(id);
-  }catch(e){
-    console.warn('Status invalid:', topic, payload.toString(), e);
-  }
-});
-
-/* click pe ușă => LOCK/UNLOCK (numai dacă NU e offline și NU e fără alimentare) */
-Object.keys(DOORS).forEach(k=>{
-  const id = parseInt(k,10);
-  const {el, cmd} = DOORS[id];
-  el.addEventListener('click', ()=>{
-    const s = state[id];
-    const offline = (Date.now() - s.last > OFFLINE_MS);
-    if (offline) { console.log(`Ușa ${id}: OFFLINE, ignor comanda.`); return; }
-    if (s.power === 'OFF'){ console.log(`Ușa ${id}: fără alimentare, ignor comanda.`); return; }
-    const next = (s.lock === 'LOCKED') ? 'UNLOCK' : 'LOCK';
-    client.publish(cmd, next);
-    console.log(`Trimis ${next} -> ${cmd}`);
-  });
-});
-
-/* watchdog: marchează offline ușile care nu mai trimit status */
-setInterval(()=>{
-  [1,2,3,4,5,6].forEach(id=> renderDoor(id));
-}, 2000);
-
-/* randare inițială (toate offline până primim ceva) */
-[1,2,3,4,5,6].forEach(id=> { setOffline(id, true); renderDoor(id); });
-</script>
+    // click on events area to clear
+    document.getElementById('events').onclick = () => { document.getElementById('events').innerHTML = ''; };
+  </script>
 </body>
 </html>
