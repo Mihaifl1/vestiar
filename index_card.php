@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ro">
-<head>
+<head> 
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Vestiar — Control lacăte</title>
