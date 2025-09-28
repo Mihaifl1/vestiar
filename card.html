@@ -9,14 +9,18 @@
     body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:980px;margin:24px auto;padding:12px}
     h1{font-size:1.4rem;margin-bottom:.2rem}
     .panel{border:1px solid #ddd;padding:12px;border-radius:8px;margin:12px 0;background:#fafafa}
-    .row{display:flex;gap:8px;align-items:center;margin:8px 0}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
     button{padding:8px 12px;border-radius:6px;border:1px solid #bbb;background:#fff;cursor:pointer}
     button.primary{background:#0b84ff;color:#fff;border-color:#0764c6}
     input[type="text"]{padding:8px;border:1px solid #ccc;border-radius:6px;width:240px}
+    input.small{width:120px}
     table{width:100%;border-collapse:collapse;margin-top:8px}
     th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;font-size:0.9rem}
     pre{white-space:pre-wrap;background:#111;color:#fff;padding:8px;border-radius:6px;overflow:auto}
     .small{font-size:0.85rem;color:#666}
+    .card-row{display:flex;gap:10px;align-items:center;padding:6px;border-radius:6px;border:1px solid #efefef;margin:6px 0;background:#fff}
+    .card-meta{font-size:0.9rem;color:#333}
+    .clickable{cursor:pointer;text-decoration:underline;color:#0b84ff}
   </style>
 </head>
 <body>
@@ -40,21 +44,26 @@
   </div>
 
   <div class="panel">
-    <h3>Gestionare carduri</h3>
+    <h3>Gestionare carduri (adaugă cu nume)</h3>
     <div class="row">
-      <input id="cardAdd" type="text" placeholder="introdu card24 (ex: 14890498)" />
+      <input id="cardAdd" type="text" placeholder="card24 (ex: 14890498)" />
+      <input id="firstName" type="text" placeholder="Prenume" class="small"/>
+      <input id="lastName"  type="text" placeholder="Nume" class="small"/>
       <button id="btnAdd">Adaugă card</button>
+
       <input id="cardRemove" type="text" placeholder="sterge card24" />
       <button id="btnRemove">Șterge card</button>
       <button id="btnList">Cere lista</button>
     </div>
     <div id="cardsArea" class="small">lista carduri: —</div>
+    <div id="cardsList" style="margin-top:8px"></div>
+    <div class="small" style="margin-top:8px">Poți click pe un card din listă pentru a-l completa în câmpul de ștergere.</div>
   </div>
 
   <div class="panel">
     <h3>Evenimente live</h3>
     <div class="row">
-      <button id="btnLogs">Cere ultimele 50 loguri</button>
+      <button id="btnLogs">Cere ultimele loguri</button>
       <input id="logsLines" type="text" value="50" style="width:70px"/>
     </div>
     <div id="events" style="max-height:300px;overflow:auto;font-size:0.9rem"></div>
@@ -76,7 +85,6 @@
       ev.innerHTML = '<small>'+new Date().toLocaleTimeString()+'</small> — '+text;
       const area = document.getElementById('events');
       area.prepend(ev);
-      // keep only 200 items
       while(area.childNodes.length>200) area.removeChild(area.lastChild);
     }
 
@@ -92,7 +100,6 @@
         return;
       }
       appendEvent('Connecting to ' + broker + ' ...');
-      // MQTT connect
       try {
         client = mqtt.connect(broker, { reconnectPeriod: 2000 });
       } catch(e){
@@ -103,7 +110,6 @@
         setConnState(true);
         appendEvent('MQTT connected');
         subscribeAll();
-        // ask status/list
         client.publish(mqttTopic('cards/list/get'), '');
         client.publish(mqttTopic('status/get') || mqttTopic('status'), '');
       });
@@ -115,46 +121,22 @@
       client.on('message', (topic, payload) => {
         const msg = payload.toString();
         appendEvent('<b>IN</b> ' + topic + ' → ' + msg);
-        // topics we expect:
-        // locker/X/status  -> JSON {"lock":"LOCKED"/"UNLOCKED"}
-        // locker/X/event  -> event JSON or short text
-        // locker/X/cards/list -> JSON array
-        // locker/X/logs -> JSON array
         try {
           if (topic === mqttTopic('status')) {
-            try {
-              const j = JSON.parse(msg);
-              if (j.lock) statusEl.textContent = j.lock;
-            } catch(e){ statusEl.textContent = msg; }
+            try { const j = JSON.parse(msg); if (j.lock) statusEl.textContent = j.lock; } catch(e){ statusEl.textContent = msg; }
           } else if (topic === mqttTopic('event') || topic === mqttTopic('event/new')) {
-            // display raw
             appendEvent('<i>event</i> ' + msg);
           } else if (topic === mqttTopic('cards/list')) {
-            // parse array
-            try {
-              const arr = JSON.parse(msg);
-              if (Array.isArray(arr)) {
-                document.getElementById('cardsArea').textContent = 'Cards: ' + arr.join(', ');
-              } else {
-                document.getElementById('cardsArea').textContent = JSON.stringify(arr);
-              }
-            } catch(e){
-              document.getElementById('cardsArea').textContent = msg;
-            }
+            renderCardsList(msg);
           } else if (topic === mqttTopic('logs')) {
-            // logs as array -> pretty print last
             try {
               const arr = JSON.parse(msg);
               if (Array.isArray(arr)) {
                 arr.reverse().forEach(o => appendEvent('<small>LOG</small> ' + JSON.stringify(o)));
-              }
-            } catch(e){
-              appendEvent('logs: ' + msg);
-            }
+              } else appendEvent('logs: ' + msg);
+            } catch(e){ appendEvent('logs parse error'); }
           }
-        } catch (e) {
-          console.error(e);
-        }
+        } catch (e) { console.error(e); }
       });
 
       function subscribeAll(){
@@ -165,7 +147,7 @@
         client.subscribe(mqttTopic('logs'));
         setConnState(true);
       }
-    }
+    };
 
     // UNLOCK / LOCK via web
     document.getElementById('btnUnlock').onclick = () => {
@@ -179,33 +161,121 @@
       appendEvent('Sent LOCK');
     };
 
-    // Cards management
+    // Validate card number (digits only)
+    function validateCardNum(s){
+      return /^\d+$/.test(s);
+    }
+
+    // Cards management: add (JSON)
     document.getElementById('btnAdd').onclick = () => {
-      const v = document.getElementById('cardAdd').value.trim();
-      if (!v) return appendEvent('introdu card');
-      client.publish(mqttTopic('cards/add'), v);
-      appendEvent('publish cards/add → ' + v);
+      if (!client || !client.connected) return appendEvent('not connected');
+      const card = document.getElementById('cardAdd').value.trim();
+      const first = document.getElementById('firstName').value.trim();
+      const last = document.getElementById('lastName').value.trim();
+      if (!card || !validateCardNum(card)) return appendEvent('Introduceți un card numeric (ex: 14890498)');
+      // build JSON payload
+      const obj = { card: parseInt(card,10) };
+      if (first) obj.first = first;
+      if (last) obj.last = last;
+      const payload = JSON.stringify(obj);
+      client.publish(mqttTopic('cards/add'), payload);
+      appendEvent('publish cards/add → ' + payload);
+      // Clear inputs optionally
+      // document.getElementById('cardAdd').value = '';
+      // document.getElementById('firstName').value = '';
+      // document.getElementById('lastName').value = '';
     };
+
+    // Remove: accepts number or JSON {card:...}
     document.getElementById('btnRemove').onclick = () => {
-      const v = document.getElementById('cardRemove').value.trim();
-      if (!v) return appendEvent('introdu card to remove');
-      client.publish(mqttTopic('cards/remove'), v);
-      appendEvent('publish cards/remove → ' + v);
+      if (!client || !client.connected) return appendEvent('not connected');
+      const card = document.getElementById('cardRemove').value.trim();
+      if (!card) return appendEvent('introduceți card pentru ștergere');
+      let payload = card;
+      if (validateCardNum(card)) {
+        // keep numeric payload (backwards compatible)
+        payload = card;
+      } else {
+        // try parse as JSON in input (advanced)
+        try { JSON.parse(card); payload = card; }
+        catch(e){ return appendEvent('Card invalid (trebuie număr sau JSON {\"card\":14890498})'); }
+      }
+      client.publish(mqttTopic('cards/remove'), payload);
+      appendEvent('publish cards/remove → ' + payload);
     };
+
+    // Request list
     document.getElementById('btnList').onclick = () => {
+      if (!client || !client.connected) return appendEvent('not connected');
       client.publish(mqttTopic('cards/list/get'), '');
       appendEvent('Requested cards list');
     };
 
     // Logs
     document.getElementById('btnLogs').onclick = () => {
+      if (!client || !client.connected) return appendEvent('not connected');
       const lines = document.getElementById('logsLines').value || '50';
       client.publish(mqttTopic('logs/get'), 'lines=' + lines);
       appendEvent('Requested logs lines=' + lines);
     };
 
+    // Render cards list: supports both array of numbers and array of objects
+    function renderCardsList(rawMsg){
+      let data;
+      try { data = JSON.parse(rawMsg); }
+      catch(e) {
+        // not JSON => show raw
+        document.getElementById('cardsArea').textContent = 'Lista (raw): ' + rawMsg;
+        return;
+      }
+      const areaList = document.getElementById('cardsList');
+      areaList.innerHTML = '';
+      if (!Array.isArray(data)) {
+        document.getElementById('cardsArea').textContent = JSON.stringify(data);
+        return;
+      }
+      if (data.length === 0) {
+        document.getElementById('cardsArea').textContent = 'Lista este goală';
+        return;
+      }
+      document.getElementById('cardsArea').textContent = 'Cards: ' + data.length;
+      // show each item with clickable remove
+      data.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'card-row';
+        let cardNum, display;
+        if (typeof item === 'number' || (typeof item === 'string' && /^\d+$/.test(item))) {
+          cardNum = parseInt(item,10);
+          display = `<span class="card-meta"><strong>${cardNum}</strong></span>`;
+        } else if (typeof item === 'object') {
+          cardNum = item.card || (item.card24 ? item.card24 : null);
+          const first = item.first || item.prenume || '';
+          const last  = item.last  || item.nume || '';
+          display = `<span class="card-meta"><strong>${cardNum}</strong> — ${first} ${last}</span>`;
+        } else {
+          display = `<span class="card-meta">${JSON.stringify(item)}</span>`;
+        }
+        div.innerHTML = display + 
+          ` <button class="small-btn" style="margin-left:auto">Șterge</button>`;
+        // click on display to fill remove input
+        div.querySelector('.card-meta').addEventListener('click', () => {
+          document.getElementById('cardRemove').value = cardNum ? String(cardNum) : '';
+          appendEvent('Prefill remove with ' + (cardNum||''));
+        });
+        // delete button publishes remove
+        div.querySelector('button.small-btn').addEventListener('click', () => {
+          if (!client || !client.connected) return appendEvent('not connected');
+          const payload = cardNum ? String(cardNum) : JSON.stringify(item);
+          client.publish(mqttTopic('cards/remove'), payload);
+          appendEvent('publish cards/remove → ' + payload);
+        });
+        areaList.appendChild(div);
+      });
+    }
+
     // click on events area to clear
     document.getElementById('events').onclick = () => { document.getElementById('events').innerHTML = ''; };
+
   </script>
 </body>
 </html>
