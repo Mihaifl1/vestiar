@@ -54,6 +54,7 @@
       <button id="loadBtn">Încarcă din ESP</button>
       <button id="clearBtn">Șterge toate</button>
       <button id="exampleBtn">Exemplu (L–V)</button>
+      <button id="copyBtn">Aplică la toate</button>
       <span class="status" id="statusMsg"></span>
     </div>
 
@@ -86,11 +87,9 @@ function subscribeForCurrent(){
   [1,2,3,4,5,6].forEach(i=> client.subscribe(`locker/${i}/schedule`));
 }
 
-/* ===== UI / reguli =====
-   Regula simplă: { days:[0..6], time:"HH:MM", action:"LOCK|UNLOCK", note:"" }
-*/
+/* ===== Stocare reguli per ușă ===== */
+let allRules = {1:[],2:[],3:[],4:[],5:[],6:[]};
 const dayNames = ['Lu','Ma','Mi','Jo','Vi','Sa','Du'];
-let currentRules = [];
 
 const rulesEl  = document.getElementById('rules');
 const doorSel  = document.getElementById('doorSel');
@@ -99,7 +98,11 @@ const saveBtn  = document.getElementById('saveBtn');
 const loadBtn  = document.getElementById('loadBtn');
 const clearBtn = document.getElementById('clearBtn');
 const exampleBtn = document.getElementById('exampleBtn');
+const copyBtn  = document.getElementById('copyBtn');
 const statusMsg = document.getElementById('statusMsg');
+
+function getCurrentRules(){ return allRules[parseInt(doorSel.value,10)]; }
+function setCurrentRules(rules){ allRules[parseInt(doorSel.value,10)] = rules; }
 
 function ruleRow(rule, idx){
   const frag = document.createDocumentFragment();
@@ -133,7 +136,7 @@ function ruleRow(rule, idx){
 
   // Ștergere
   const del = document.createElement('button'); del.className='del'; del.textContent='✕';
-  del.addEventListener('click',()=>{ currentRules.splice(idx,1); renderRules(); });
+  del.addEventListener('click',()=>{ getCurrentRules().splice(idx,1); renderRules(); });
 
   // în grid
   const w1=document.createElement('div'), w2=document.createElement('div'),
@@ -143,48 +146,49 @@ function ruleRow(rule, idx){
   return frag;
 }
 
-function renderRules(){ rulesEl.innerHTML=''; currentRules.forEach((r,i)=> rulesEl.appendChild(ruleRow(r,i))); }
+function renderRules(){ rulesEl.innerHTML=''; getCurrentRules().forEach((r,i)=> rulesEl.appendChild(ruleRow(r,i))); }
 
-addBtn.onclick = ()=>{ currentRules.push({days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}); renderRules(); };
-clearBtn.onclick = ()=>{ currentRules=[]; renderRules(); };
-exampleBtn.onclick = ()=>{
-  currentRules = [
+addBtn.onclick = ()=>{ getCurrentRules().push({days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}); renderRules(); };
+clearBtn.onclick = ()=>{ setCurrentRules([]); renderRules(); };
+exampleBtn.onclick = ()=>{ setCurrentRules([
     {days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:'deschidere L–V'},
     {days:[0,1,2,3,4], time:'18:00', action:'LOCK',   note:'închidere L–V'}
-  ];
-  renderRules();
+  ]); renderRules(); };
+copyBtn.onclick = ()=>{ 
+  const clone = JSON.parse(JSON.stringify(getCurrentRules()));
+  for(let i=1;i<=6;i++){ allRules[i] = JSON.parse(JSON.stringify(clone)); }
+  flash('Reguli copiate la toate ușile.');
 };
-
-function flash(msg, ok=true){ statusMsg.innerHTML = `<span class="${ok?'good':'warn'}">${msg}</span>`; setTimeout(()=>statusMsg.textContent='',2500); }
 
 /* Save → locker/<id>/schedule/set */
-saveBtn.onclick = ()=>{
+saveBtn.onclick = ()=>{ 
   const id = parseInt(doorSel.value,10);
-  const payload = JSON.stringify({rules: currentRules}, null, 0);
+  const payload = JSON.stringify({rules:getCurrentRules()}, null, 0);
   client.publish(`locker/${id}/schedule/set`, payload);
-  flash('Program trimis către ESP.');
+  flash('Program trimis către ESP.'); 
 };
 
-/* Load ← cere la locker/<id>/schedule/get; ESP răspunde la locker/<id>/schedule */
-loadBtn.onclick = ()=>{
+/* Load ← cere la locker/<id>/schedule/get */
+loadBtn.onclick = ()=>{ 
   const id = parseInt(doorSel.value,10);
   client.publish(`locker/${id}/schedule/get`, "REQ");
-  flash('Cerere program trimisă. Aștept răspunsul ESP.');
+  flash('Cerere program trimisă. Aștept răspunsul ESP.'); 
 };
 
-/* Recepție program curent (de la orice ușă) */
-client.on('message', (topic, payload)=>{
+/* Recepție program curent */
+client.on('message', (topic, payload)=>{ 
   const parts = topic.split('/');
   if (parts.length>=3 && parts[0]==='locker' && parts[2]==='schedule'){
     const id = parseInt(parts[1],10);
-    const sel = parseInt(doorSel.value,10);
-    if (id!==sel) return; // arată doar pentru ușa selectată
     try{
       const obj = JSON.parse(payload.toString());
-      if (Array.isArray(obj.rules)){ currentRules = obj.rules; renderRules(); flash('Program primit din ESP.'); }
+      if(Array.isArray(obj.rules)){ allRules[id] = obj.rules; }
+      if(id===parseInt(doorSel.value,10)){ renderRules(); flash('Program primit din ESP.'); }
     }catch{ flash('JSON invalid de la ESP.', false); }
   }
 });
+
+function flash(msg, ok=true){ statusMsg.innerHTML = `<span class="${ok?'good':'warn'}">${msg}</span>`; setTimeout(()=>statusMsg.textContent='',2500); }
 
 /* start */
 renderRules();
