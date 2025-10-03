@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Programări uși – MQTT</title>
+<title>Programări uși – MQTT (debug)</title>
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <style>
   :root{ --bg:#0b1220; --card:#0f172a; --bd:#334155; --ok:#22c55e; --warn:#f59e0b; --txt:#e5e7eb; }
@@ -30,11 +30,12 @@
   .status{min-height:22px}
   .good{color:var(--ok)} .warn{color:var(--warn)}
   .note{opacity:.8;font-size:12px;margin-top:8px}
+  pre.debug{background:#071022;border:1px solid #122233;padding:8px;border-radius:8px;color:#cbd5e1;max-height:180px;overflow:auto}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Programări pentru uși (MQTT)</h1>
+  <h1>Programări pentru uși (MQTT) — DEBUG</h1>
 
   <div class="top">
     <div class="conn" id="conn"><span class="dot" id="dot"></span><span id="connText">Se conectează la MQTT…</span></div>
@@ -55,6 +56,7 @@
       <button id="clearBtn">Șterge toate</button>
       <button id="exampleBtn">Exemplu (L–V)</button>
       <button id="copyBtn">Aplică la toate</button>
+      <button id="printBtn">Print JSON</button>
       <span class="status" id="statusMsg"></span>
     </div>
 
@@ -71,6 +73,9 @@
       Formatul trimis pe MQTT: <code>{"rules":[{"days":[0,1,2,3,4],"time":"08:00","action":"UNLOCK"}...]}</code>
       (0=Luni … 6=Duminică)
     </div>
+
+    <h3 style="margin-top:12px">Debug / Preview</h3>
+    <pre class="debug" id="debugDump">—</pre>
   </div>
 </div>
 
@@ -79,9 +84,9 @@
 const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", { clientId:"sched_"+Math.random().toString(16).slice(2) });
 const connText = document.getElementById('connText'); const dot = document.getElementById('dot');
 
-client.on('connect', ()=>{ dot.classList.add('ok'); connText.textContent='MQTT conectat'; subscribeForCurrent(); });
-client.on('reconnect', ()=>{ dot.classList.remove('ok'); connText.textContent='Reconectare…'; });
-client.on('close', ()=>{ dot.classList.remove('ok'); connText.textContent='MQTT închis'; });
+client.on('connect', ()=>{ dot.classList.add('ok'); connText.textContent='MQTT conectat'; subscribeForCurrent(); flash('MQTT conectat', true); });
+client.on('reconnect', ()=>{ dot.classList.remove('ok'); connText.textContent='Reconectare…'; flash('Reconectare MQTT...', false); });
+client.on('close', ()=>{ dot.classList.remove('ok'); connText.textContent='MQTT închis'; flash('MQTT închis', false); });
 
 function subscribeForCurrent(){
   [1,2,3,4,5,6].forEach(i=> client.subscribe(`locker/${i}/schedule`));
@@ -99,12 +104,38 @@ const loadBtn  = document.getElementById('loadBtn');
 const clearBtn = document.getElementById('clearBtn');
 const exampleBtn = document.getElementById('exampleBtn');
 const copyBtn  = document.getElementById('copyBtn');
+const printBtn = document.getElementById('printBtn');
 const statusMsg = document.getElementById('statusMsg');
+const debugDump = document.getElementById('debugDump');
 
-function getCurrentRules(){ return allRules[parseInt(doorSel.value,10)]; }
+function getCurrentRules(){ 
+  const id = parseInt(doorSel.value,10);
+  if(!Array.isArray(allRules[id])) allRules[id]=[];
+  return allRules[id]; 
+}
 function setCurrentRules(rules){ allRules[parseInt(doorSel.value,10)] = rules; }
 
+function normalizeRule(rule){
+  // Ensure days is array
+  if(!Array.isArray(rule.days)) rule.days = [];
+  // unique & sorted days
+  rule.days = Array.from(new Set(rule.days.map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6))).sort((a,b)=>a-b);
+  // time: ensure HH:MM
+  if(typeof rule.time !== 'string') rule.time = '08:00';
+  const m = rule.time.match(/^(\d{1,2}):(\d{2})$/);
+  if(!m){ rule.time = '08:00'; }
+  // action
+  rule.action = (rule.action||'UNLOCK').toString().toUpperCase();
+  if(rule.action !== 'UNLOCK' && rule.action !== 'LOCK') rule.action='UNLOCK';
+  // note string
+  if(typeof rule.note !== 'string') rule.note = '';
+  return { days: rule.days, time: rule.time, action: rule.action, note: rule.note };
+}
+
 function ruleRow(rule, idx){
+  // make sure rule.days exists
+  if(!Array.isArray(rule.days)) rule.days = [];
+
   const frag = document.createDocumentFragment();
 
   // Zile
@@ -113,8 +144,12 @@ function ruleRow(rule, idx){
     const chip = document.createElement('label'); chip.className='chip';
     const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = (rule.days||[]).includes(i);
     cb.addEventListener('change',()=>{
+      if(!Array.isArray(rule.days)) rule.days=[];
       if(cb.checked){ if(!rule.days.includes(i)) rule.days.push(i); }
       else { rule.days = rule.days.filter(x=>x!==i); }
+      // keep days normalized in UI
+      rule.days = Array.from(new Set(rule.days)).sort((a,b)=>a-b);
+      renderRules(); // re-render to update checkboxes order
     });
     chip.appendChild(cb); chip.append(name); daysBox.appendChild(chip);
   });
@@ -146,9 +181,16 @@ function ruleRow(rule, idx){
   return frag;
 }
 
-function renderRules(){ rulesEl.innerHTML=''; getCurrentRules().forEach((r,i)=> rulesEl.appendChild(ruleRow(r,i))); }
+function renderRules(){ 
+  rulesEl.innerHTML='';
+  getCurrentRules().forEach((r,i)=> rulesEl.appendChild(ruleRow(r,i)));
+  updateDebug(); 
+}
 
-addBtn.onclick = ()=>{ getCurrentRules().push({days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}); renderRules(); };
+addBtn.onclick = ()=>{ 
+  getCurrentRules().push({days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}); 
+  renderRules(); 
+};
 clearBtn.onclick = ()=>{ setCurrentRules([]); renderRules(); };
 exampleBtn.onclick = ()=>{ setCurrentRules([
     {days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:'deschidere L–V'},
@@ -158,14 +200,35 @@ copyBtn.onclick = ()=>{
   const clone = JSON.parse(JSON.stringify(getCurrentRules()));
   for(let i=1;i<=6;i++){ allRules[i] = JSON.parse(JSON.stringify(clone)); }
   flash('Reguli copiate la toate ușile.');
+  renderRules();
 };
+
+printBtn.onclick = ()=> {
+  const json = normalizeRulesForPublish();
+  console.log("PRINT rules JSON:", json);
+  debugDump.textContent = JSON.stringify(json, null, 2);
+  flash('JSON afișat în consola si preview.');
+};
+
+/* Normalizează și returnează payload */
+function normalizeRulesForPublish(){
+  const rules = getCurrentRules().map(r=>normalizeRule(r));
+  // optional: filter invalid entries (eg. empty days)
+  return { rules: rules };
+}
 
 /* Save → locker/<id>/schedule/set */
 saveBtn.onclick = ()=>{ 
   const id = parseInt(doorSel.value,10);
-  const payload = JSON.stringify({rules:getCurrentRules()}, null, 0);
+  const payloadObj = normalizeRulesForPublish();
+  const payload = JSON.stringify(payloadObj);
+  // Debug logs
+  console.log("PUBLISH -> topic:", `locker/${id}/schedule/set`);
+  console.log("PUBLISH payload:", payload);
+  console.log("PUBLISH len:", payload.length);
+  debugDump.textContent = payload;
   client.publish(`locker/${id}/schedule/set`, payload);
-  flash('Program trimis către ESP.'); 
+  flash('Program trimis către ESP. Vezi consola pentru payload.', true); 
 };
 
 /* Load ← cere la locker/<id>/schedule/get */
@@ -182,13 +245,19 @@ client.on('message', (topic, payload)=>{
     const id = parseInt(parts[1],10);
     try{
       const obj = JSON.parse(payload.toString());
-      if(Array.isArray(obj.rules)){ allRules[id] = obj.rules; }
+      if(Array.isArray(obj.rules)){
+        // normalize incoming rules elements
+        const norm = obj.rules.map(r => normalizeRule(r));
+        allRules[id] = norm;
+      }
       if(id===parseInt(doorSel.value,10)){ renderRules(); flash('Program primit din ESP.'); }
-    }catch{ flash('JSON invalid de la ESP.', false); }
+      console.log("MQTT recv schedule for", id, obj);
+    }catch(e){ console.error("Invalid JSON from ESP:", e); flash('JSON invalid de la ESP.', false); }
   }
 });
 
 function flash(msg, ok=true){ statusMsg.innerHTML = `<span class="${ok?'good':'warn'}">${msg}</span>`; setTimeout(()=>statusMsg.textContent='',2500); }
+function updateDebug(){ debugDump.textContent = JSON.stringify(getCurrentRules(), null, 2); }
 
 /* start */
 renderRules();
