@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Uși - stare & IP</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  body{font-family:system-ui,Arial;background:#0b1220;color:#e6eef6;padding:18px}
+  h1{margin:0 0 14px;font-size:20px}
+  .container{max-width:980px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:1fr 120px 120px 120px 90px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #1f2937}
+  .grid.hdr{font-weight:700;color:#cbd5e1;border-bottom:2px dashed #1f2937;padding-bottom:10px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+  .ip{font-family:monospace}
+  button{background:#111827;color:#e6eef6;border:1px solid #374151;padding:6px 8px;border-radius:6px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .small{font-size:13px;opacity:.9}
+  .muted{opacity:.7;font-size:13px}
+  #log{margin-top:16px;max-height:220px;overflow:auto;border:1px solid #1f2937;padding:8px;background:#071018;font-family:monospace;font-size:12px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Lista uși (IP & deschidere) — MQTT</h1>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <label>Broker WS:</label>
+    <input id="broker" value="wss://broker.emqx.io:8084/mqtt" style="flex:1;background:#071018;color:#e6eef6;border:1px solid #1f2937;padding:6px;border-radius:6px"/>
+    <button id="btnConnect">Connect</button>
+    <div id="status" class="muted">neconectat</div>
+  </div>
+
+  <div class="grid hdr"><div>Ușă</div><div>IP</div><div>freeHeap</div><div>Last seen</div><div></div></div>
+  <div id="list"></div>
+
+  <div id="log"></div>
+</div>
+
+<script>
+const listEl = document.getElementById('list');
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const brokerInput = document.getElementById('broker');
+const btnConnect = document.getElementById('btnConnect');
+
+let client = null;
+let doors = {}; // doors[id] = { ip, freeHeap, lastSeenMS, door }
+
+function log(msg){
+  const t = new Date().toLocaleTimeString();
+  logEl.innerText = `[${t}] ${msg}\n` + logEl.innerText;
+}
+
+// render list sorted by door id (numeric)
+function renderList(){
+  listEl.innerHTML = '';
+  const ids = Object.keys(doors).map(x=>parseInt(x,10)).sort((a,b)=>a-b);
+  for (const id of ids){
+    const d = doors[id];
+    const last = d.lastSeenMS ? (Date.now()-d.lastSeenMS) : Infinity;
+    const lastStr = d.lastSeenMS ? `${Math.floor(last/1000)}s ago` : 'never';
+    const row = document.createElement('div');
+    row.className='grid';
+    row.innerHTML = `
+      <div><strong>Ușa ${id}</strong><div class="muted small">${d.note||''}</div></div>
+      <div class="ip">${d.ip || '-'}</div>
+      <div>${d.freeHeap ? d.freeHeap : '-'}</div>
+      <div class="small">${lastStr}</div>
+      <div><button ${d.ip ? '' : 'disabled'} onclick="openUI(${id})">Open</button></div>
+    `;
+    listEl.appendChild(row);
+  }
+}
+
+// when no doors yet, show placeholders for 1..6
+function ensurePlaceholders(n=6){
+  for(let i=1;i<=n;i++) if(!doors[i]) doors[i] = { door:i };
+  renderList();
+}
+
+// open interface in new tab/window
+function openUI(id){
+  const d = doors[id];
+  if(!d || !d.ip){ alert('IP necunoscut'); return; }
+  // open http (works on LAN). If your ESP UI uses another path or port change accordingly
+  const url = `http://${d.ip}/`;
+  window.open(url, '_blank');
+}
+
+// mqtt message handler
+function setupClient(brokerUrl){
+  if (client){ try{ client.end(); }catch{} client=null;}
+  log('Conectare la: '+brokerUrl);
+  client = mqtt.connect(brokerUrl, { clientId: 'doors_ui_'+Math.random().toString(16).slice(2), keepalive: 30, reconnectPeriod: 2000 });
+  statusEl.textContent = 'connecting...';
+  client.on('connect', ()=>{ statusEl.textContent = 'connected'; log('MQTT connected'); client.subscribe('locker/+/info'); });
+  client.on('reconnect', ()=>{ statusEl.textContent = 'reconnecting'; log('MQTT reconnecting...'); });
+  client.on('offline', ()=>{ statusEl.textContent = 'offline'; log('MQTT offline'); });
+  client.on('error', (err)=>{ statusEl.textContent = 'error'; log('MQTT error: '+ err); });
+  client.on('message', (topic, payload)=>{
+    try{
+      const p = payload.toString();
+      log(`MQTT ${topic} -> ${p}`);
+      const m = JSON.parse(p);
+      // topic form: locker/<id>/info
+      const parts = topic.split('/');
+      if(parts.length>=3 && parts[0]==='locker' && parts[2]==='info'){
+        const id = parseInt(parts[1],10);
+        if(!doors[id]) doors[id] = { door:id };
+        doors[id].ip = m.ip || m.host || doors[id].ip;
+        doors[id].freeHeap = m.freeHeap || m.free || doors[id].freeHeap;
+        doors[id].lastSeenMS = Date.now();
+        doors[id].note = m.note || '';
+        renderList();
+      }
+    }catch(e){ log('parse error: '+e); }
+  });
+}
+
+// connect button
+btnConnect.addEventListener('click', ()=>{
+  const url = brokerInput.value.trim();
+  if(!url) return alert('Introduceți broker WS (ex: wss://broker.emqx.io:8084/mqtt)');
+  setupClient(url);
+});
+
+// start with placeholders and try auto-connect to default broker
+ensurePlaceholders(6);
+setupClient(brokerInput.value);
+</script>
+</body>
+</html>
