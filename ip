@@ -11,7 +11,6 @@
   .container{max-width:980px;margin:0 auto}
   .grid{display:grid;grid-template-columns:1fr 120px 120px 120px 90px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #1f2937}
   .grid.hdr{font-weight:700;color:#cbd5e1;border-bottom:2px dashed #1f2937;padding-bottom:10px}
-  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
   .ip{font-family:monospace}
   button{background:#111827;color:#e6eef6;border:1px solid #374151;padding:6px 8px;border-radius:6px;cursor:pointer}
   button:disabled{opacity:.5;cursor:default}
@@ -44,14 +43,14 @@ const brokerInput = document.getElementById('broker');
 const btnConnect = document.getElementById('btnConnect');
 
 let client = null;
-let doors = {}; // doors[id] = { ip, freeHeap, lastSeenMS, door }
+let doors = {}; // doors[id] = { ip, freeHeap, lastSeenMS, note }
 
 function log(msg){
   const t = new Date().toLocaleTimeString();
   logEl.innerText = `[${t}] ${msg}\n` + logEl.innerText;
 }
 
-// render list sorted by door id (numeric)
+// render list sorted by door id
 function renderList(){
   listEl.innerHTML = '';
   const ids = Object.keys(doors).map(x=>parseInt(x,10)).sort((a,b)=>a-b);
@@ -64,67 +63,68 @@ function renderList(){
     row.innerHTML = `
       <div><strong>Ușa ${id}</strong><div class="muted small">${d.note||''}</div></div>
       <div class="ip">${d.ip || '-'}</div>
-      <div>${d.freeHeap ? d.freeHeap : '-'}</div>
+      <div>${(d.freeHeap!==undefined)? d.freeHeap : '-'}</div>
       <div class="small">${lastStr}</div>
       <div><button ${d.ip ? '' : 'disabled'} onclick="openUI(${id})">Open</button></div>
     `;
     listEl.appendChild(row);
   }
 }
-
-// when no doors yet, show placeholders for 1..6
 function ensurePlaceholders(n=6){
   for(let i=1;i<=n;i++) if(!doors[i]) doors[i] = { door:i };
   renderList();
 }
-
-// open interface in new tab/window
 function openUI(id){
   const d = doors[id];
   if(!d || !d.ip){ alert('IP necunoscut'); return; }
-  // open http (works on LAN). If your ESP UI uses another path or port change accordingly
-  const url = `http://${d.ip}/`;
-  window.open(url, '_blank');
+  window.open(`http://${d.ip}/`, '_blank');
 }
 
-// mqtt message handler
 function setupClient(brokerUrl){
   if (client){ try{ client.end(); }catch{} client=null;}
   log('Conectare la: '+brokerUrl);
   client = mqtt.connect(brokerUrl, { clientId: 'doors_ui_'+Math.random().toString(16).slice(2), keepalive: 30, reconnectPeriod: 2000 });
   statusEl.textContent = 'connecting...';
-  client.on('connect', ()=>{ statusEl.textContent = 'connected'; log('MQTT connected'); client.subscribe('locker/+/info'); });
+  client.on('connect', ()=>{
+    statusEl.textContent = 'connected';
+    log('MQTT connected');
+    client.subscribe('locker/+/status');
+    client.subscribe('locker/+/info');
+  });
   client.on('reconnect', ()=>{ statusEl.textContent = 'reconnecting'; log('MQTT reconnecting...'); });
-  client.on('offline', ()=>{ statusEl.textContent = 'offline'; log('MQTT offline'); });
-  client.on('error', (err)=>{ statusEl.textContent = 'error'; log('MQTT error: '+ err); });
+  client.on('offline',  ()=>{ statusEl.textContent = 'offline'; log('MQTT offline'); });
+  client.on('error',    (err)=>{ statusEl.textContent = 'error'; log('MQTT error: '+ err); });
   client.on('message', (topic, payload)=>{
     try{
       const p = payload.toString();
       log(`MQTT ${topic} -> ${p}`);
       const m = JSON.parse(p);
-      // topic form: locker/<id>/info
-      const parts = topic.split('/');
-      if(parts.length>=3 && parts[0]==='locker' && parts[2]==='info'){
+      const parts = topic.split('/'); // locker/<id>/status OR locker/<id>/info
+      if(parts.length>=3 && parts[0]==='locker'){
         const id = parseInt(parts[1],10);
         if(!doors[id]) doors[id] = { door:id };
-        doors[id].ip = m.ip || m.host || doors[id].ip;
-        doors[id].freeHeap = m.freeHeap || m.free || doors[id].freeHeap;
         doors[id].lastSeenMS = Date.now();
-        doors[id].note = m.note || '';
+
+        if (parts[2]==='status'){
+          if (m.ip) doors[id].ip = m.ip;
+          if (typeof m.freeHeap !== 'undefined') doors[id].freeHeap = m.freeHeap;
+          if (m.note) doors[id].note = m.note;
+        } else if (parts[2]==='info'){
+          if (m.ip) doors[id].ip = m.ip;
+          if (typeof m.freeHeap !== 'undefined') doors[id].freeHeap = m.freeHeap;
+        }
         renderList();
       }
     }catch(e){ log('parse error: '+e); }
   });
 }
 
-// connect button
 btnConnect.addEventListener('click', ()=>{
   const url = brokerInput.value.trim();
   if(!url) return alert('Introduceți broker WS (ex: wss://broker.emqx.io:8084/mqtt)');
   setupClient(url);
 });
 
-// start with placeholders and try auto-connect to default broker
 ensurePlaceholders(6);
 setupClient(brokerInput.value);
 </script>
