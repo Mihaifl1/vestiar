@@ -16,12 +16,13 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
-#include <vector>
 #include <time.h>
-
+#include <vector>
+#include <ESP8266HTTPClient.h>   // ✅ adaugă asta
+#include <WiFiClient.h>          // ✅ și asta
 // ---------- CONFIG ----------
-const char* WIFI_SSID = "Guest";
-const char* WIFI_PASS = "kablemguest";
+const char* WIFI_SSID = "vestiar";
+const char* WIFI_PASS = "Sammy_2019";
 
 const char* MQTT_HOST = "broker.emqx.io";
 const uint16_t MQTT_PORT = 1883;
@@ -389,6 +390,8 @@ void processWiegand() {
     unsigned int cardNum = (unsigned int)(card24 & 0xFFFF);
     bool ok = false; for (auto &c : allowedCards) if (c.card == card24) { ok = true; break; }
     logCardEvent(card24, facility, cardNum, ok);
+    sendEventToServer(card24, facility, cardNum, ok);
+
     Serial.printf("CARD: %lu fac=%u num=%u ok=%d\n", card24, facility, cardNum, ok ? 1 : 0);
     if (enrollMode) {
       DynamicJsonDocument d(256); d["card"] = card24; d["first"] = ""; d["last"] = "";
@@ -738,7 +741,7 @@ fetchInfo();
 loadSchedule();
 loadCards();
 loadDbInfo();
-setInterval(()=>{ fetchInfo(); }, 5000);
+setInterval(()=>{ fetchInfo(); loadDbInfo(); }, 5000);
 </script>
 </body>
 </html>
@@ -757,6 +760,39 @@ void handleNow() { DynamicJsonDocument d(128); d["now"] = nowStamp(); String out
 void handleMem() { DynamicJsonDocument d(128); d["freeHeap"] = (unsigned)ESP.getFreeHeap(); String out; serializeJson(d, out); sendJsonWithCORS(200, out); }
 void handleStatus() { DynamicJsonDocument d(128); d["lock"] = lockState; d["ts"] = nowStamp(); String out; serializeJson(d, out); sendJsonWithCORS(200, out); }
 
+
+// Trimite evenimente CARD la serverul PHP
+
+void sendEventToServer(unsigned long card24, unsigned int facility, unsigned int cardNumber, bool ok) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skip HTTP send");
+    return;
+  }
+
+  WiFiClient client;                  // ✅ creează clientul WiFi
+  HTTPClient http;                    // ✅ creează obiectul HTTP
+
+  // ✅ noua sintaxă: http.begin(client, "url")
+  http.begin(client, "http://192.168.66.240/vestiar_event.php");
+  http.addHeader("Content-Type", "application/json");
+
+  DynamicJsonDocument d(256);
+  d["type"] = "CARD";
+  d["source"] = String("door_") + String(DOOR_ID);
+  d["card24"] = card24;
+  d["facility"] = facility;
+  d["cardNumber"] = cardNumber;
+  d["ok"] = ok;
+  d["first"] = "";
+  d["last"] = "";
+
+  String json;
+  serializeJson(d, json);
+
+  int code = http.POST(json);
+  Serial.printf("HTTP POST event (%lu) -> code=%d\n", card24, code);
+  http.end();
+}
 void handleGetCards() {
   DynamicJsonDocument doc(32768);
   JsonArray arr = doc.createNestedArray("cards");
