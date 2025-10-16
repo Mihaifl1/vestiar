@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vestiar MQTT Control</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: white;
+      text-align: center;
+      margin: 0;
+      padding: 30px;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #60a5fa;
+    }
+    .door {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 80%;
+      max-width: 320px;
+      margin: 12px auto;
+      padding: 15px;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.2s;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+    .door.locked {
+      background: #16a34a; /* verde */
+    }
+    .door.unlocked {
+      background: #dc2626; /* roșu */
+    }
+    .door.offline {
+      background: #6b7280; /* gri */
+    }
+    .door:active {
+      transform: scale(0.97);
+    }
+    #status {
+      margin-top: 25px;
+      font-size: 16px;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <h1>Control Vestiar MQTT</h1>
+
+  <div id="doors">
+    <div class="door offline" id="door1">Ușa 1 (offline)</div>
+    <div class="door offline" id="door2">Ușa 2 (offline)</div>
+    <div class="door offline" id="door3">Ușa 3 (offline)</div>
+    <div class="door offline" id="door4">Ușa 4 (offline)</div>
+    <div class="door offline" id="door5">Ușa 5 (offline)</div>
+    <div class="door offline" id="door6">Ușa 6 (offline)</div>
+  </div>
+
+  <div id="status">🔌 Se conectează la broker MQTT...</div>
+
+  <script>
+    const broker = "wss://broker.emqx.io:8084/mqtt";
+    const clientId = "web_" + Math.random().toString(16).substr(2, 8);
+    const topicBase = "locker";
+    const state = {};
+
+    const client = mqtt.connect(broker, { clientId });
+    const statusEl = document.getElementById("status");
+
+    client.on("connect", () => {
+      statusEl.textContent = "🟢 Conectat la MQTT (" + broker + ")";
+      for (let i = 1; i <= 6; i++) {
+        client.subscribe(`${topicBase}/${i}/status`);
+        const door = document.getElementById(`door${i}`);
+        door.classList.remove("offline");
+        door.classList.add("locked");
+        door.textContent = `Ușa ${i} 🔒 LOCKED`;
+        door.onclick = () => toggleDoor(i);
+        state[i] = "LOCKED";
+      }
+    });
+
+    client.on("reconnect", () => statusEl.textContent = "🟡 Reconectare...");
+    client.on("close", () => statusEl.textContent = "🔴 Deconectat de la MQTT");
+    client.on("error", (err) => {
+      statusEl.textContent = "❌ Eroare MQTT: " + err.message;
+      console.error("Eroare MQTT:", err);
+    });
+
+    // când primește status JSON
+    client.on("message", (topic, payload) => {
+      try {
+        const txt = payload.toString();
+        const data = JSON.parse(txt);
+        const parts = topic.split("/");
+        const id = parseInt(parts[1]);
+        if (!data.lock) return;
+        updateDoorState(id, data.lock.toUpperCase());
+      } catch {
+        console.warn("Status nevalid:", payload.toString());
+      }
+    });
+
+    function updateDoorState(id, newState) {
+      const el = document.getElementById(`door${id}`);
+      state[id] = newState;
+      el.classList.remove("locked", "unlocked");
+      if (newState === "LOCKED") {
+        el.classList.add("locked");
+        el.textContent = `Ușa ${id} 🔒 LOCKED`;
+      } else if (newState === "UNLOCKED") {
+        el.classList.add("unlocked");
+        el.textContent = `Ușa ${id} 🔓 UNLOCKED`;
+      } else {
+        el.classList.add("offline");
+        el.textContent = `Ușa ${id} ⚪ OFFLINE`;
+      }
+    }
+
+    function toggleDoor(id) {
+      const nextState = state[id] === "LOCKED" ? "UNLOCK" : "LOCK";
+      const cmdTopic = `${topicBase}/${id}/cmd`;
+      client.publish(cmdTopic, nextState);
+      statusEl.textContent = `🚪 Trimis ${nextState} → Ușa ${id}`;
+    }
+  </script>
+</body>
+</html>
