@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vestiar MQTT Control</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vestiar & Depozit Control</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     body {
@@ -12,13 +12,50 @@
       color: white;
       text-align: center;
       margin: 0;
-      padding: 30px;
+      padding: 0;
     }
-    h1 {
-      margin-bottom: 20px;
+
+    header {
+      background: #111827;
+      padding: 15px;
       color: #60a5fa;
+      font-size: 22px;
+      font-weight: bold;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
     }
-    .door {
+
+    .tabs {
+      display: flex;
+      justify-content: center;
+      background: #1e293b;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 14px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: 0.3s;
+      color: #9ca3af;
+      border-bottom: 3px solid transparent;
+    }
+
+    .tab.active {
+      color: #fff;
+      background: #2563eb;
+      border-bottom: 3px solid #3b82f6;
+    }
+
+    .tab-content {
+      display: none;
+      padding: 20px;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .door, .zone {
       display: flex;
       justify-content: center;
       align-items: center;
@@ -33,18 +70,21 @@
       transition: background 0.3s, transform 0.2s;
       box-shadow: 0 0 10px rgba(0,0,0,0.3);
     }
-    .door.locked {
+
+    .door.locked, .zone.locked {
       background: #16a34a; /* verde */
     }
-    .door.unlocked {
+    .door.unlocked, .zone.unlocked {
       background: #dc2626; /* roșu */
     }
-    .door.offline {
+    .door.offline, .zone.offline {
       background: #6b7280; /* gri */
     }
-    .door:active {
+
+    .door:active, .zone:active {
       transform: scale(0.97);
     }
+
     #status {
       margin-top: 25px;
       font-size: 16px;
@@ -53,83 +93,135 @@
   </style>
 </head>
 <body>
-  <h1>Control Vestiar </h1>
+  <header>Control MQTT</header>
 
-  <div id="doors">
-    <div class="door offline" id="door1">Ușa 1 (offline)</div>
-    <div class="door offline" id="door2">Ușa 2 (offline)</div>
-    <div class="door offline" id="door3">Ușa 3 (offline)</div>
-    <div class="door offline" id="door4">Ușa 4 (offline)</div>
-    <div class="door offline" id="door5">Ușa 5 (offline)</div>
-    <div class="door offline" id="door6">Ușa 6 (offline)</div>
+  <div class="tabs">
+    <div class="tab active" id="tab-vestiar">Vestiar</div>
+    <div class="tab" id="tab-depozit">Depozit</div>
+  </div>
+
+  <!-- TAB 1: Vestiar -->
+  <div class="tab-content active" id="content-vestiar">
+    <h2>Control Vestiar</h2>
+    <div id="doors">
+      <div class="door offline" id="door1">Ușa 1 (offline)</div>
+      <div class="door offline" id="door2">Ușa 2 (offline)</div>
+      <div class="door offline" id="door3">Ușa 3 (offline)</div>
+      <div class="door offline" id="door4">Ușa 4 (offline)</div>
+      <div class="door offline" id="door5">Ușa 5 (offline)</div>
+      <div class="door offline" id="door6">Ușa 6 (offline)</div>
+    </div>
+  </div>
+
+  <!-- TAB 2: Depozit -->
+  <div class="tab-content" id="content-depozit">
+    <h2>Acces Depozit</h2>
+    <div class="zone offline" id="zone1">Depozit Zona 1 (offline)</div>
+    <div class="zone offline" id="zone2">Depozit Zona 2 (offline)</div>
   </div>
 
   <div id="status">🔌 Se conectează la broker MQTT...</div>
 
   <script>
+    // TAB SWITCH
+    const tabVestiar = document.getElementById("tab-vestiar");
+    const tabDepozit = document.getElementById("tab-depozit");
+    const contentVestiar = document.getElementById("content-vestiar");
+    const contentDepozit = document.getElementById("content-depozit");
+
+    tabVestiar.onclick = () => switchTab("vestiar");
+    tabDepozit.onclick = () => switchTab("depozit");
+
+    function switchTab(tab) {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+
+      if (tab === "vestiar") {
+        tabVestiar.classList.add("active");
+        contentVestiar.classList.add("active");
+      } else {
+        tabDepozit.classList.add("active");
+        contentDepozit.classList.add("active");
+      }
+    }
+
+    // MQTT SETUP
     const broker = "wss://broker.emqx.io:8084/mqtt";
     const clientId = "web_" + Math.random().toString(16).substr(2, 8);
-    const topicBase = "locker";
     const state = {};
-
     const client = mqtt.connect(broker, { clientId });
     const statusEl = document.getElementById("status");
 
     client.on("connect", () => {
       statusEl.textContent = "🟢 Conectat la MQTT (" + broker + ")";
+      // Subscriem la toate ușile
       for (let i = 1; i <= 6; i++) {
-        client.subscribe(`${topicBase}/${i}/status`);
+        client.subscribe(`locker/${i}/status`);
         const door = document.getElementById(`door${i}`);
         door.classList.remove("offline");
         door.classList.add("locked");
         door.textContent = `Ușa ${i} 🔒 LOCKED`;
-        door.onclick = () => toggleDoor(i);
-        state[i] = "LOCKED";
+        door.onclick = () => toggleDoor(i, "locker");
+        state[`locker${i}`] = "LOCKED";
+      }
+      // Subscriem la zonele depozitului
+      for (let i = 1; i <= 2; i++) {
+        client.subscribe(`depozit/${i}/status`);
+        const zone = document.getElementById(`zone${i}`);
+        zone.classList.remove("offline");
+        zone.classList.add("locked");
+        zone.textContent = `Depozit Zona ${i} 🔒 LOCKED`;
+        zone.onclick = () => toggleDoor(i, "depozit");
+        state[`depozit${i}`] = "LOCKED";
       }
     });
 
     client.on("reconnect", () => statusEl.textContent = "🟡 Reconectare...");
     client.on("close", () => statusEl.textContent = "🔴 Deconectat de la MQTT");
-    client.on("error", (err) => {
-      statusEl.textContent = "❌ Eroare MQTT: " + err.message;
-      console.error("Eroare MQTT:", err);
-    });
 
-    // când primește status JSON
     client.on("message", (topic, payload) => {
       try {
         const txt = payload.toString();
         const data = JSON.parse(txt);
         const parts = topic.split("/");
+        const section = parts[0];
         const id = parseInt(parts[1]);
         if (!data.lock) return;
-        updateDoorState(id, data.lock.toUpperCase());
+        updateState(section, id, data.lock.toUpperCase());
       } catch {
         console.warn("Status nevalid:", payload.toString());
       }
     });
 
-    function updateDoorState(id, newState) {
-      const el = document.getElementById(`door${id}`);
-      state[id] = newState;
-      el.classList.remove("locked", "unlocked");
+    function updateState(section, id, newState) {
+      const el = document.getElementById(
+        section === "locker" ? `door${id}` : `zone${id}`
+      );
+      el.classList.remove("locked", "unlocked", "offline");
       if (newState === "LOCKED") {
         el.classList.add("locked");
-        el.textContent = `Ușa ${id} 🔒 LOCKED`;
+        el.textContent = section === "locker"
+          ? `Ușa ${id} 🔒 LOCKED`
+          : `Depozit Zona ${id} 🔒 LOCKED`;
       } else if (newState === "UNLOCKED") {
         el.classList.add("unlocked");
-        el.textContent = `Ușa ${id} 🔓 UNLOCKED`;
+        el.textContent = section === "locker"
+          ? `Ușa ${id} 🔓 UNLOCKED`
+          : `Depozit Zona ${id} 🔓 UNLOCKED`;
       } else {
         el.classList.add("offline");
-        el.textContent = `Ușa ${id} ⚪ OFFLINE`;
+        el.textContent = section === "locker"
+          ? `Ușa ${id} ⚪ OFFLINE`
+          : `Depozit Zona ${id} ⚪ OFFLINE`;
       }
     }
 
-    function toggleDoor(id) {
-      const nextState = state[id] === "LOCKED" ? "UNLOCK" : "LOCK";
-      const cmdTopic = `${topicBase}/${id}/cmd`;
+    function toggleDoor(id, section) {
+      const key = section + id;
+      const nextState = state[key] === "LOCKED" ? "UNLOCK" : "LOCK";
+      const cmdTopic = `${section}/${id}/cmd`;
       client.publish(cmdTopic, nextState);
-      statusEl.textContent = `🚪 Trimis ${nextState} → Ușa ${id}`;
+      statusEl.textContent = `🚪 Trimis ${nextState} → ${section === "locker" ? "Ușa" : "Depozit Zona"} ${id}`;
     }
   </script>
 </body>
