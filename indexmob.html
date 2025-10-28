@@ -1,187 +1,228 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>Vestiar & Depozit Control</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Control MQTT – Vestiar & Depozit</title>
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <style>
   body {
-    font-family: Arial, sans-serif;
-    background: #0b1220;
-    color: white;
-    text-align: center;
-    margin: 0;
+    margin:0;
+    background:#0b1220;
+    color:white;
+    font-family:Arial,sans-serif;
+    text-align:center;
   }
-
   header {
-    background: #111827;
-    padding: 15px;
-    color: #60a5fa;
-    font-size: 22px;
-    font-weight: bold;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    background:#111827;
+    padding:15px;
+    font-size:22px;
+    color:#60a5fa;
+    font-weight:bold;
   }
 
+  /* === TAB-URI === */
   .tabs {
-    display: flex;
-    justify-content: center;
-    background: #1e293b;
-  }
-
-  .tab {
-    flex: 1;
-    padding: 14px;
-    cursor: pointer;
-    font-weight: bold;
-    color: #9ca3af;
-    border-bottom: 3px solid transparent;
-  }
-  .tab.active {
-    color: #fff;
-    background: #2563eb;
-    border-bottom: 3px solid #3b82f6;
-  }
-
-  .tab-content { display:none; padding:20px; }
-  .tab-content.active { display:block; }
-
-  .door, .zone {
     display:flex;
     justify-content:center;
-    align-items:center;
-    width:80%;
+    background:#1e293b;
+    flex-wrap:wrap;
+  }
+  .tab {
+    flex:1 1 50%;
+    padding:14px;
+    cursor:pointer;
+    font-weight:bold;
+    color:#9ca3af;
+    border-bottom:3px solid transparent;
+  }
+  .tab.active {
+    color:#fff;
+    background:#2563eb;
+    border-bottom:3px solid #3b82f6;
+  }
+  .tab-content {
+    display:none;
+    padding:20px;
+  }
+  .tab-content.active {
+    display:block;
+  }
+
+  #status {
+    font-size:15px;
+    opacity:0.85;
+    margin:10px 0;
+  }
+
+  /* === BUTOANE (UȘI) === */
+  .door {
+    width:90%;
     max-width:320px;
     margin:12px auto;
-    padding:15px;
+    padding:16px;
     border-radius:12px;
     font-size:18px;
     font-weight:bold;
+    box-shadow:0 0 10px rgba(0,0,0,0.3);
     cursor:pointer;
-    transition: background 0.3s, transform 0.2s;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    transition:transform 0.2s, background 0.3s;
   }
-  .door.locked, .zone.locked   { background:#16a34a; }
-  .door.unlocked, .zone.unlocked { background:#dc2626; }
-  .door.offline, .zone.offline { background:#6b7280; }
+  .door:active { transform:scale(0.97); }
 
-  .door:active, .zone:active { transform: scale(0.97); }
+  /* === STĂRI === */
+  .inchisa-incuiata   { background:#16a34a; }  /* verde - închisă și încuiată */
+  .inchisa-descuiata  { background:#3b82f6; }  /* albastru - închisă și descuiată */
+  .deschisa-incuiata  { background:#f97316; }  /* portocaliu - deschisă și încuiată */
+  .deschisa-descuiata { background:#ef4444; }  /* roșu - deschisă și descuiată */
+  .offline            { background:#6b7280; color:#ccc; } /* gri - offline */
 
-  #status { margin-top:20px; font-size:16px; opacity:0.9; }
+  /* === BUTON UPDATE === */
+  #updateBtn {
+    margin-top:20px;
+    background:#2563eb;
+    color:white;
+    font-weight:bold;
+    border:none;
+    padding:12px 24px;
+    border-radius:10px;
+    font-size:16px;
+    cursor:pointer;
+    transition:background 0.3s;
+  }
+  #updateBtn:hover { background:#1d4ed8; }
+
+  @media (max-width:600px){
+    .door{font-size:17px; padding:12px;}
+  }
 </style>
 </head>
 <body>
-  <header>Control MQTT</header>
 
-  <div class="tabs">
-    <div class="tab active" id="tab-vestiar">Vestiar</div>
-    <div class="tab" id="tab-depozit">Depozit</div>
-  </div>
+<header>Control MQTT – Vestiar & Depozit</header>
 
-  <!-- TAB VESTIAR -->
-  <div class="tab-content active" id="content-vestiar">
-    <h2>Control Vestiar</h2>
-    <div id="doors"></div>
-  </div>
+<div class="tabs">
+  <div class="tab active" id="tab-vestiar">Vestiar</div>
+  <div class="tab" id="tab-depozit">Depozit</div>
+</div>
 
-  <!-- TAB DEPOZIT -->
-  <div class="tab-content" id="content-depozit">
-    <h2>Acces Depozit</h2>
-    <div id="zones"></div>
-  </div>
+<div id="status">🔌 Se conectează la broker MQTT...</div>
 
-  <div id="status">🔌 Se conectează la broker MQTT...</div>
+<!-- === TAB Vestiar === -->
+<div class="tab-content active" id="content-vestiar">
+  <div id="doors"></div>
+  <button id="updateBtn">🔄 UPDATE</button>
+</div>
+
+<!-- === TAB Depozit === -->
+<div class="tab-content" id="content-depozit">
+  <div id="zones"></div>
+</div>
 
 <script>
-/* ======== TAB SWITCH ======== */
-const tabVestiar = document.getElementById("tab-vestiar");
-const tabDepozit = document.getElementById("tab-depozit");
-const contentVestiar = document.getElementById("content-vestiar");
-const contentDepozit = document.getElementById("content-depozit");
-
-tabVestiar.onclick = () => switchTab("vestiar");
-tabDepozit.onclick = () => switchTab("depozit");
-
+/* === TAB SWITCH === */
+const tabVestiar=document.getElementById("tab-vestiar");
+const tabDepozit=document.getElementById("tab-depozit");
+const contentVestiar=document.getElementById("content-vestiar");
+const contentDepozit=document.getElementById("content-depozit");
+tabVestiar.onclick=()=>switchTab("vestiar");
+tabDepozit.onclick=()=>switchTab("depozit");
 function switchTab(tab){
   document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
   document.querySelectorAll(".tab-content").forEach(c=>c.classList.remove("active"));
   if(tab==="vestiar"){ tabVestiar.classList.add("active"); contentVestiar.classList.add("active"); }
-  else { tabDepozit.classList.add("active"); contentDepozit.classList.add("active"); }
+  else{ tabDepozit.classList.add("active"); contentDepozit.classList.add("active"); }
 }
 
-/* ======== MQTT SETUP ======== */
-const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
-const options = { clientId: "web_" + Math.random().toString(16).slice(2) };
-const client = mqtt.connect(brokerUrl, options);
-const statusEl = document.getElementById("status");
-const OFFLINE_MS = 20000;
+/* === MQTT CONFIG === */
+const brokerUrl="wss://broker.emqx.io:8084/mqtt";
+let client=null;
+const statusEl=document.getElementById("status");
+const OFFLINE_MS=20000;
 
-/* ======== CREARE ELEMENTE ======== */
-const doorsDiv = document.getElementById("doors");
-const zonesDiv = document.getElementById("zones");
-const DOORS = {};
-const ZONES = {};
+function connectMQTT(){
+  if(client){ try{client.end(true);}catch(e){} }
+  client=mqtt.connect(brokerUrl,{clientId:"web_"+Math.random().toString(16).slice(2)});
+  statusEl.textContent="🔌 Se conectează la broker MQTT...";
+
+  client.on("connect",()=>{
+    statusEl.textContent="🟢 Conectat la MQTT";
+    Object.values(DOORS).forEach(d=>client.subscribe(d.status));
+    Object.values(ZONES).forEach(z=>client.subscribe(z.status));
+  });
+  client.on("reconnect",()=>statusEl.textContent="🟡 Reconectare...");
+  client.on("close",()=>statusEl.textContent="🔴 Deconectat");
+
+  client.on("message",(topic,payload)=>{
+    try{
+      const data=JSON.parse(payload.toString());
+      const [sect,id,typ]=topic.split("/");
+      const n=parseInt(id,10);
+      const obj=(sect==="locker"?DOORS[n]:ZONES[n]);
+      if(!obj) return;
+      if(data.lock) obj.lock=data.lock.toUpperCase();
+      if(data.door) obj.door=data.door.toUpperCase();
+      obj.last=Date.now();
+      render(sect,n);
+    }catch(e){ console.warn("Eroare MQTT:",topic,payload.toString()); }
+  });
+}
+connectMQTT();
+
+/* === LISTE === */
+const doorsDiv=document.getElementById("doors");
+const zonesDiv=document.getElementById("zones");
+const DOORS={},ZONES={};
+
 for(let i=1;i<=6;i++){
-  const el = document.createElement("div");
-  el.id = "door"+i;
-  el.className = "door offline";
-  el.textContent = `Ușa ${i} ⚪ OFFLINE`;
+  const el=document.createElement("div");
+  el.className="door offline";
+  el.textContent=`Ușa ${i} ⚪ OFFLINE`;
   doorsDiv.appendChild(el);
-  DOORS[i] = {el, cmd:`locker/${i}/cmd`, status:`locker/${i}/status`, last:0, lock:"LOCKED", power:"ON"};
+  DOORS[i]={el,cmd:`locker/${i}/cmd`,status:`locker/${i}/status`,last:0,lock:"LOCKED",door:"CLOSED"};
 }
 for(let i=1;i<=2;i++){
-  const el = document.createElement("div");
-  el.id = "zone"+i;
-  el.className = "zone offline";
-  el.textContent = `Depozit Zona ${i} ⚪ OFFLINE`;
+  const el=document.createElement("div");
+  el.className="door offline";
+  el.textContent=`Zona ${i} ⚪ OFFLINE`;
   zonesDiv.appendChild(el);
-  ZONES[i] = {el, cmd:`depozit/${i}/cmd`, status:`depozit/${i}/status`, last:0, lock:"LOCKED", power:"ON"};
+  ZONES[i]={el,cmd:`depozit/${i}/cmd`,status:`depozit/${i}/status`,last:0,lock:"LOCKED",door:"CLOSED"};
 }
 
-/* ======== CONEXIUNE MQTT ======== */
-client.on("connect", ()=>{
-  statusEl.textContent = "🟢 Conectat la MQTT";
-  Object.keys(DOORS).forEach(i=>client.subscribe(DOORS[i].status));
-  Object.keys(ZONES).forEach(i=>client.subscribe(ZONES[i].status));
-});
-client.on("reconnect", ()=>statusEl.textContent="🟡 Reconectare...");
-client.on("close", ()=>statusEl.textContent="🔴 Deconectat");
-
-/* ======== MESAJ STATUS ======== */
-client.on("message",(topic,payload)=>{
-  try{
-    const txt = payload.toString();
-    const data = JSON.parse(txt);
-    const [sect,id,typ] = topic.split("/");
-    const n = parseInt(id,10);
-    const obj = sect==="locker"?DOORS[n]:ZONES[n];
-    if(!obj) return;
-    if(data.lock) obj.lock=data.lock.toUpperCase();
-    if(data.power) obj.power=data.power.toUpperCase();
-    obj.last=Date.now();
-    render(sect,n);
-  }catch(e){ console.warn("Status invalid:",topic,payload.toString()); }
-});
-
-/* ======== RANDARE STARE ======== */
+/* === RANDARE STĂRI === */
 function render(section,id){
-  const obj = section==="locker"?DOORS[id]:ZONES[id];
-  const el = obj.el;
-  const off = (Date.now()-obj.last>OFFLINE_MS);
-  el.classList.remove("locked","unlocked","offline");
+  const obj=section==="locker"?DOORS[id]:ZONES[id];
+  const el=obj.el;
+  const off=(Date.now()-obj.last>OFFLINE_MS);
+  el.className="door";
   if(off){
     el.classList.add("offline");
-    el.textContent = (section==="locker"?`Ușa ${id}`:`Depozit Zona ${id}`)+" ⚪ OFFLINE";
-  }else if(obj.lock==="LOCKED"){
-    el.classList.add("locked");
-    el.textContent = (section==="locker"?`Ușa ${id}`:`Depozit Zona ${id}`)+" 🔒 LOCKED";
-  }else{
-    el.classList.add("unlocked");
-    el.textContent = (section==="locker"?`Ușa ${id}`:`Depozit Zona ${id}`)+" 🔓 UNLOCKED";
+    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} ⚪ OFFLINE`;
+    return;
+  }
+
+  const door=obj.door;
+  const lock=obj.lock;
+
+  if(door==="CLOSED" && lock==="LOCKED"){
+    el.classList.add("inchisa-incuiata");
+    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🔒 Închisă și încuiată`;
+  }
+  else if(door==="CLOSED" && lock==="UNLOCKED"){
+    el.classList.add("inchisa-descuiata");
+    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🔓 Închisă și descuiată`;
+  }
+  else if(door==="OPEN" && lock==="LOCKED"){
+    el.classList.add("deschisa-incuiata");
+    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🟠 Deschisă și încuiată`;
+  }
+  else if(door==="OPEN" && lock==="UNLOCKED"){
+    el.classList.add("deschisa-descuiata");
+    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🚪 Deschisă și descuiată`;
   }
 }
 
-/* ======== CLICK = TOGGLE LOCK ======== */
+/* === CLICK PE UȘĂ === */
 Object.keys(DOORS).forEach(k=>{
   const id=parseInt(k);
   DOORS[id].el.onclick=()=>toggle("locker",id);
@@ -190,21 +231,26 @@ Object.keys(ZONES).forEach(k=>{
   const id=parseInt(k);
   ZONES[id].el.onclick=()=>toggle("depozit",id);
 });
-
 function toggle(section,id){
-  const obj = section==="locker"?DOORS[id]:ZONES[id];
-  const off = (Date.now()-obj.last>OFFLINE_MS);
-  if(off) return console.log(`${section} ${id} este offline`);
-  const next = obj.lock==="LOCKED"?"UNLOCK":"LOCK";
+  const obj=section==="locker"?DOORS[id]:ZONES[id];
+  const off=(Date.now()-obj.last>OFFLINE_MS);
+  if(off) return;
+  const next=obj.lock==="LOCKED"?"UNLOCK":"LOCK";
   client.publish(obj.cmd,next);
-  statusEl.textContent=`🚪 Trimis ${next} → ${section} ${id}`;
+  statusEl.textContent=`🔁 Trimis ${next} → ${section} ${id}`;
 }
 
-/* ======== WATCHDOG ======== */
+/* === WATCHDOG === */
 setInterval(()=>{
   Object.keys(DOORS).forEach(i=>render("locker",i));
   Object.keys(ZONES).forEach(i=>render("depozit",i));
 },2000);
+
+/* === BUTON UPDATE === */
+document.getElementById("updateBtn").onclick=()=>{
+  statusEl.textContent="🔄 Se reconectează...";
+  connectMQTT();
+};
 </script>
 </body>
 </html>
