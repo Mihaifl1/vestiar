@@ -27,7 +27,7 @@ const char* WIFI_PASS = "Sammy_2019";
 const char* MQTT_HOST = "broker.emqx.io";
 const uint16_t MQTT_PORT = 1883;
 
-const int DOOR_ID = 6;
+const int DOOR_ID = 2;
 
 // Relay
 const int PIN_RELAY = 16; // D0
