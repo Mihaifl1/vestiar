@@ -20,8 +20,6 @@
     color:#60a5fa;
     font-weight:bold;
   }
-
-  /* === TAB-URI === */
   .tabs {
     display:flex;
     justify-content:center;
@@ -41,43 +39,29 @@
     background:#2563eb;
     border-bottom:3px solid #3b82f6;
   }
-  .tab-content {
-    display:none;
-    padding:20px;
-  }
-  .tab-content.active {
-    display:block;
-  }
+  .tab-content { display:none; padding:20px; }
+  .tab-content.active { display:block; }
 
-  #status {
-    font-size:15px;
-    opacity:0.85;
-    margin:10px 0;
-  }
+  #status { font-size:15px; opacity:0.85; margin:10px 0; }
 
-  /* === BUTOANE (UȘI) === */
   .door {
-    width:90%;
-    max-width:320px;
-    margin:12px auto;
-    padding:16px;
+    width:90%; max-width:320px;
+    margin:12px auto; padding:16px;
     border-radius:12px;
-    font-size:18px;
-    font-weight:bold;
+    font-size:18px; font-weight:bold;
     box-shadow:0 0 10px rgba(0,0,0,0.3);
     cursor:pointer;
     transition:transform 0.2s, background 0.3s;
   }
   .door:active { transform:scale(0.97); }
 
-  /* === STĂRI === */
-  .inchisa-incuiata   { background:#16a34a; }  /* verde - închisă și încuiată */
-  .inchisa-descuiata  { background:#3b82f6; }  /* albastru - închisă și descuiată */
-  .deschisa-incuiata  { background:#f97316; }  /* portocaliu - deschisă și încuiată */
-  .deschisa-descuiata { background:#ef4444; }  /* roșu - deschisă și descuiată */
-  .offline            { background:#6b7280; color:#ccc; } /* gri - offline */
+  /* culori stări */
+  .inchisa-incuiata   { background:#16a34a; }  /* verde */
+  .inchisa-descuiata  { background:#3b82f6; }  /* albastru */
+  .deschisa-incuiata  { background:#f97316; }  /* portocaliu */
+  .deschisa-descuiata { background:#ef4444; }  /* roșu */
+  .offline            { background:#6b7280; color:#ccc; } /* gri */
 
-  /* === BUTON UPDATE === */
   #updateBtn {
     margin-top:20px;
     background:#2563eb;
@@ -108,19 +92,22 @@
 
 <div id="status">🔌 Se conectează la broker MQTT...</div>
 
-<!-- === TAB Vestiar === -->
+<!-- Vestiar -->
 <div class="tab-content active" id="content-vestiar">
   <div id="doors"></div>
   <button id="updateBtn">🔄 UPDATE</button>
 </div>
 
-<!-- === TAB Depozit === -->
+<!-- Depozit -->
 <div class="tab-content" id="content-depozit">
   <div id="zones"></div>
 </div>
 
+<!-- Sunet -->
+<audio id="alertSound" src="alert.mp3" preload="auto"></audio>
+
 <script>
-/* === TAB SWITCH === */
+/* ===== TAB SWITCH ===== */
 const tabVestiar=document.getElementById("tab-vestiar");
 const tabDepozit=document.getElementById("tab-depozit");
 const contentVestiar=document.getElementById("content-vestiar");
@@ -130,15 +117,16 @@ tabDepozit.onclick=()=>switchTab("depozit");
 function switchTab(tab){
   document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
   document.querySelectorAll(".tab-content").forEach(c=>c.classList.remove("active"));
-  if(tab==="vestiar"){ tabVestiar.classList.add("active"); contentVestiar.classList.add("active"); }
-  else{ tabDepozit.classList.add("active"); contentDepozit.classList.add("active"); }
+  if(tab==="vestiar"){tabVestiar.classList.add("active");contentVestiar.classList.add("active");}
+  else{tabDepozit.classList.add("active");contentDepozit.classList.add("active");}
 }
 
-/* === MQTT CONFIG === */
+/* ===== MQTT CONFIG ===== */
 const brokerUrl="wss://broker.emqx.io:8084/mqtt";
 let client=null;
 const statusEl=document.getElementById("status");
 const OFFLINE_MS=20000;
+const alertSound=document.getElementById("alertSound");
 
 function connectMQTT(){
   if(client){ try{client.end(true);}catch(e){} }
@@ -152,24 +140,23 @@ function connectMQTT(){
   });
   client.on("reconnect",()=>statusEl.textContent="🟡 Reconectare...");
   client.on("close",()=>statusEl.textContent="🔴 Deconectat");
-
   client.on("message",(topic,payload)=>{
     try{
       const data=JSON.parse(payload.toString());
       const [sect,id,typ]=topic.split("/");
       const n=parseInt(id,10);
       const obj=(sect==="locker"?DOORS[n]:ZONES[n]);
-      if(!obj) return;
-      if(data.lock) obj.lock=data.lock.toUpperCase();
-      if(data.door) obj.door=data.door.toUpperCase();
+      if(!obj)return;
+      if(data.lock)obj.lock=data.lock.toUpperCase();
+      if(data.door)obj.door=data.door.toUpperCase();
       obj.last=Date.now();
       render(sect,n);
-    }catch(e){ console.warn("Eroare MQTT:",topic,payload.toString()); }
+    }catch(e){console.warn("Eroare MQTT:",topic,payload.toString());}
   });
 }
 connectMQTT();
 
-/* === LISTE === */
+/* ===== ELEMENTE ===== */
 const doorsDiv=document.getElementById("doors");
 const zonesDiv=document.getElementById("zones");
 const DOORS={},ZONES={};
@@ -189,7 +176,7 @@ for(let i=1;i<=2;i++){
   ZONES[i]={el,cmd:`depozit/${i}/cmd`,status:`depozit/${i}/status`,last:0,lock:"LOCKED",door:"CLOSED"};
 }
 
-/* === RANDARE STĂRI === */
+/* ===== RANDARE ===== */
 function render(section,id){
   const obj=section==="locker"?DOORS[id]:ZONES[id];
   const el=obj.el;
@@ -215,6 +202,7 @@ function render(section,id){
   else if(door==="OPEN" && lock==="LOCKED"){
     el.classList.add("deschisa-incuiata");
     el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🟠 Deschisă și încuiată`;
+    alertSound.play().catch(()=>{}); // 🎵 Redă sunetul de avertizare
   }
   else if(door==="OPEN" && lock==="UNLOCKED"){
     el.classList.add("deschisa-descuiata");
@@ -222,7 +210,7 @@ function render(section,id){
   }
 }
 
-/* === CLICK PE UȘĂ === */
+/* ===== CLICK ===== */
 Object.keys(DOORS).forEach(k=>{
   const id=parseInt(k);
   DOORS[id].el.onclick=()=>toggle("locker",id);
@@ -234,19 +222,25 @@ Object.keys(ZONES).forEach(k=>{
 function toggle(section,id){
   const obj=section==="locker"?DOORS[id]:ZONES[id];
   const off=(Date.now()-obj.last>OFFLINE_MS);
-  if(off) return;
+  if(off)return;
   const next=obj.lock==="LOCKED"?"UNLOCK":"LOCK";
   client.publish(obj.cmd,next);
   statusEl.textContent=`🔁 Trimis ${next} → ${section} ${id}`;
 }
 
-/* === WATCHDOG === */
+/* ===== AUTO UPDATE LA FIECARE 5 SECUNDE ===== */
 setInterval(()=>{
-  Object.keys(DOORS).forEach(i=>render("locker",i));
-  Object.keys(ZONES).forEach(i=>render("depozit",i));
-},2000);
+  if(!client || client.disconnected){
+    console.log("Auto-update MQTT...");
+    statusEl.textContent="🔁 Auto-update...";
+    connectMQTT();
+  } else {
+    Object.keys(DOORS).forEach(i=>render("locker",i));
+    Object.keys(ZONES).forEach(i=>render("depozit",i));
+  }
+},5000);
 
-/* === BUTON UPDATE === */
+/* ===== BUTON UPDATE MANUAL ===== */
 document.getElementById("updateBtn").onclick=()=>{
   statusEl.textContent="🔄 Se reconectează...";
   connectMQTT();
