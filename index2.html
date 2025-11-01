@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vestiar ESP8266</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 40px;
+    }
+    h1 { color: #22c55e; }
+    button {
+      background: #22c55e;
+      border: none;
+      color: white;
+      padding: 12px 20px;
+      margin: 10px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #16a34a; }
+    #status {
+      margin-top: 20px;
+      color: #ccc;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Vestiar ESP8266</h1>
+  <button onclick="openDoor()">Deschide Ușa</button>
+  <button onclick="lockDoor()">Închide Ușa</button>
+
+  <p id="status">Status conexiune: necunoscut...</p>
+
+  <script>
+    const esp_ip = "http://192.168.4.1"; // IP-ul ESP-ului în rețeaua locală
+
+    function openDoor() {
+      fetch(esp_ip + "/open")
+        .then(r => r.text())
+        .then(t => document.getElementById("status").innerText = "Ușa deschisă ✅")
+        .catch(e => document.getElementById("status").innerText = "Eroare conexiune ❌");
+    }
+
+    function lockDoor() {
+      fetch(esp_ip + "/lock")
+        .then(r => r.text())
+        .then(t => document.getElementById("status").innerText = "Ușa închisă 🔒")
+        .catch(e => document.getElementById("status").innerText = "Eroare conexiune ❌");
+    }
+
+    // actualizează automat statusul conexiunii
+    setInterval(() => {
+      fetch(esp_ip + "/status")
+        .then(r => r.text())
+        .then(t => document.getElementById("status").innerText = "Status: " + t)
+        .catch(e => document.getElementById("status").innerText = "ESP offline ❌");
+    }, 5000);
+  </script>
+</body>
+</html>
