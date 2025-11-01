@@ -123,7 +123,7 @@ select,input[type=time],input[type=text]{padding:8px;border-radius:6px;backgroun
 const api=(p,m='GET',b=null)=>{const o={method:m,headers:{}}; if(b){o.headers['Content-Type']='application/json'; o.body=JSON.stringify(b);} return fetch(p,o).then(r=>r.ok?r.json():r.text().then(t=>{throw t}))};
 
 // <<< SCHIMBĂ cu IP-ul serverului tău PHP >>>
-const DBINFO_URL = '%PHP_DBINFO_URL%';
+const DBINFO_URL = 'http://192.168.66.240/vestiar_dbinfo.php';
 
 let rules=[]; const dayNames=['Lu','Ma','Mi','Jo','Vi','Sa','Du'];
 
@@ -255,4 +255,5 @@ setInterval(()=>{ fetchInfo(); loadDbInfo(); }, 5000);
 </script>
 </body>
 </html>
+
 
