@@ -1,68 +1,257 @@
-<!DOCTYPE html>
+!doctype html>
 <html lang="ro">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vestiar ESP8266</title>
-  <style>
-    body {
-      background: #111;
-      color: #eee;
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 40px;
-    }
-    h1 { color: #22c55e; }
-    button {
-      background: #22c55e;
-      border: none;
-      color: white;
-      padding: 12px 20px;
-      margin: 10px;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button:hover { background: #16a34a; }
-    #status {
-      margin-top: 20px;
-      color: #ccc;
-      font-size: 14px;
-    }
-  </style>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP Vestiar — Programări & Carduri & Oră</title>
+<style>
+:root{--bg:#0b1220;--card:#0f172a;--bd:#334155;--ok:#22c55e;--warn:#f59e0b}
+body{background:var(--bg);color:#e6eef6;font-family:Arial;padding:12px}
+.container{max-width:1000px;margin:0 auto}
+h1{font-size:20px;margin:0 0 8px}
+.panel{background:var(--card);border:1px solid var(--bd);padding:12px;border-radius:8px}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:6px 8px;border-radius:999px;border:1px solid var(--bd);cursor:pointer;user-select:none}
+.chip.active{background:#123; color:#cfe}
+.rule{display:grid;grid-template-columns:1fr 110px 120px 1fr 36px;gap:8px;align-items:center;padding:8px;border-bottom:1px solid rgba(255,255,255,0.02)}
+.small{font-size:13px;color:#9fb0c6}
+.note{font-size:13px;opacity:.85;margin-top:8px}
+.button{background:#0b4fff;color:#fff;padding:8px 10px;border-radius:6px;border:none;cursor:pointer}
+.del{background:#172036;border:1px solid var(--bd);border-radius:6px;padding:6px 8px;cursor:pointer}
+.footer{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.table{width:100%;border-collapse:collapse;margin-top:8px}
+.table th{font-weight:700;text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.04)}
+.table td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.02);font-size:13px}
+.sectionTitle{margin:16px 0 6px;font-weight:700}
+select,input[type=time],input[type=text]{padding:8px;border-radius:6px;background:#0b1b2a;color:#fff;border:1px solid #233}
+</style>
 </head>
 <body>
-  <h1>Vestiar ESP8266</h1>
-  <button onclick="openDoor()">Deschide Ușa</button>
-  <button onclick="lockDoor()">Închide Ușa</button>
+<div class="container">
+  <h1>ESP Vestiar — Programări & Carduri & Oră</h1>
 
-  <p id="status">Status conexiune: necunoscut...</p>
+  <!-- Info + TZ -->
+  <div class="panel">
+    <div class="row">
+      <div>IP: <span id="ip" class="small">—</span></div>
+      <div>Ora: <span id="now" class="small">—</span></div>
+      <div>Stare: <span id="lock" class="small">—</span></div>
+      <div style="margin-left:auto"><button id="btnReload" class="button">Reîncarcă</button></div>
+    </div>
 
-  <script>
-    const esp_ip = "http://192.168.4.1"; // IP-ul ESP-ului în rețeaua locală
+    <div class="sectionTitle">Setări oră (fus orar)</div>
+    <div class="row">
+      <div>Fus orar (UTC offset):</div>
+      <select id="tzSelect">
+        <option value="-2">UTC−2</option>
+        <option value="-1">UTC−1</option>
+        <option value="0">UTC</option>
+        <option value="1">UTC+1</option>
+        <option value="2">UTC+2</option>
+        <option value="3">UTC+3</option>
+        <option value="4">UTC+4</option>
+      </select>
+      <button id="saveTz" class="button">Salvează</button>
+      <span id="tzMsg" class="small"></span>
+    </div>
+        <div class="sectionTitle">Parolă de acces (Keypad)</div>
+    <div class="row">
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px;max-width:220px">
+       <input id="codeCurrent" type="password" placeholder="Parolă curentă (dacă există)" style="width:100%;text-align:center">
+       <input id="codeNew" type="password" placeholder="Parolă nouă (4–8 cifre)" style="width:100%;text-align:center">
+       <input id="codeConfirm" type="password" placeholder="Confirmă parola nouă" style="width:100%;text-align:center">
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;margin-left:8px">
+        <button id="saveCode" class="button">Salvează cod</button>
+        <div id="codeMsg" class="small"></div>
+      </div>
+    </div>
 
-    function openDoor() {
-      fetch(esp_ip + "/open")
-        .then(r => r.text())
-        .then(t => document.getElementById("status").innerText = "Ușa deschisă ✅")
-        .catch(e => document.getElementById("status").innerText = "Eroare conexiune ❌");
+
+    <h3>Programări</h3>
+    <div id="rulesContainer"></div>
+
+    <div class="footer">
+      <button id="btnAdd" class="button">Adaugă regulă</button>
+      <button id="btnSave" class="button">Salvează în ESP</button>
+      <button id="btnClear" class="button">Șterge toate</button>
+    </div>
+
+    <div class="note">Selectează zilele, ora și acțiunea. Noile reguli au implicit Luni–Vineri selectate.</div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="panel">
+    <h3>Carduri (cache)</h3>
+    <div class="row">
+      <button id="btnCardsRefresh" class="button">Actualizează din server</button>
+      <button id="btnAddCard" class="button">Adaugă card manual</button>
+      <div id="cardsMsg" class="small" style="margin-left:auto"></div>
+    </div>
+
+    <!-- Informații DB (PHP) -->
+    <div id="dbInfo" class="small" style="margin-top:6px">
+      Ultimul card din DB: <span id="dbLast">—</span> •
+      Distincte: <span id="dbDistinct">—</span> •
+      Evenimente CARD: <span id="dbTotal">—</span>
+    </div>
+
+    <table class="table" id="cardsTable">
+      <thead><tr><th>Card</th><th>Nume</th><th>Acțiune</th></tr></thead>
+      <tbody id="cardsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Dialog simplu -->
+<div id="cardPrompt" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center">
+  <div style="background:#071018;padding:16px;border-radius:8px;max-width:360px;margin:auto">
+    <div style="margin-bottom:8px">Adaugă card</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <input id="cardNum" placeholder="card numeric">
+      <input id="cardFirst" placeholder="prenume (opțional)">
+      <input id="cardLast" placeholder="nume (opțional)">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="cardAddOk" class="button">Adaugă</button>
+        <button id="cardAddCancel" class="button" style="background:#666">Anulează</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const api=(p,m='GET',b=null)=>{const o={method:m,headers:{}}; if(b){o.headers['Content-Type']='application/json'; o.body=JSON.stringify(b);} return fetch(p,o).then(r=>r.ok?r.json():r.text().then(t=>{throw t}))};
+
+// <<< SCHIMBĂ cu IP-ul serverului tău PHP >>>
+const DBINFO_URL = '%PHP_DBINFO_URL%';
+
+let rules=[]; const dayNames=['Lu','Ma','Mi','Jo','Vi','Sa','Du'];
+
+function makeRuleElement(r, idx){
+  const el=document.createElement('div'); el.className='rule';
+  const daysWrap=document.createElement('div'); daysWrap.className='chips';
+  dayNames.forEach((n,d)=>{
+    const c=document.createElement('div'); c.className='chip'; c.textContent=n;
+    if((r.days||[]).includes(d)) c.classList.add('active');
+    c.onclick=()=>{ if(!r.days) r.days=[]; if(r.days.includes(d)) r.days=r.days.filter(x=>x!==d); else r.days.push(d); renderRules(); };
+    daysWrap.appendChild(c);
+  });
+  const t=document.createElement('input'); t.type='time'; t.value=r.time||'08:00'; t.oninput=()=>r.time=t.value;
+  const sel=document.createElement('select'); ['UNLOCK','LOCK'].forEach(a=>{const o=document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o);}); sel.value=r.action||'UNLOCK'; sel.onchange=()=>r.action=sel.value;
+  const note=document.createElement('input'); note.type='text'; note.value=r.note||''; note.placeholder='notă (opțional)'; note.oninput=()=>r.note=note.value;
+  const del=document.createElement('button'); del.className='del'; del.textContent='✕'; del.onclick=()=>{rules.splice(idx,1); renderRules();};
+  el.appendChild(daysWrap); el.appendChild(t); el.appendChild(sel); el.appendChild(note); el.appendChild(del);
+  return el;
+}
+function renderRules(){ const cont=document.getElementById('rulesContainer'); cont.innerHTML=''; rules.forEach((r,i)=> cont.appendChild(makeRuleElement(r,i))); }
+function loadSchedule(){
+  api('/api/schedule').then(j=>{
+    rules=j.rules||[];
+    rules=rules.map(r=>{ if(!r.days||!Array.isArray(r.days)||r.days.length===0) r.days=[0,1,2,3,4]; return {days:r.days.slice(), time:r.time||'08:00', action:r.action||'UNLOCK', note:r.note||''};});
+    renderRules();
+  }).catch(()=>{ rules=[{days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}]; renderRules(); });
+}
+function saveSchedule(){
+  const payload={rules:rules.map(r=>({days:r.days.slice(), time:r.time, action:r.action, note:r.note}))};
+  api('/api/schedule','POST',payload).then(()=>{ alert('Salvat'); }).catch(e=>{ alert('Eroare salvare'); console.error(e); });
+}
+document.getElementById('btnAdd').onclick=()=>{ rules.push({days:[0,1,2,3,4], time:'08:00', action:'UNLOCK', note:''}); renderRules(); };
+document.getElementById('btnSave').onclick=saveSchedule;
+document.getElementById('btnClear').onclick=()=>{ rules=[]; renderRules(); };
+document.getElementById('btnReload').onclick=()=>{ fetchInfo(); loadSchedule(); };
+
+// TZ
+function loadTz(){ api('/api/tz').then(j=>{ document.getElementById('tzSelect').value=j.tz; }); }
+document.getElementById('saveTz').onclick=()=>{ const v=Number(document.getElementById('tzSelect').value);
+  api('/api/tz','POST',{tz:v}).then(()=>{ document.getElementById('tzMsg').textContent='Salvat!'; setTimeout(()=>{document.getElementById('tzMsg').textContent='';},2000); }).catch(()=> alert('Eroare TZ'));
+};
+
+function fetchInfo(){
+  api('/api/now').then(j=>{ document.getElementById('now').textContent=j.now; }).catch(()=>{});
+  api('/api/mem').then(()=>{ document.getElementById('ip').textContent=location.hostname; }).catch(()=>{});
+  api('/api/status').then(j=>{ document.getElementById('lock').textContent=j.lock; }).catch(()=>{});
+}
+
+/* Carduri */
+function renderCards(list){
+  const body=document.getElementById('cardsBody'); body.innerHTML='';
+  list.forEach(c=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'); td1.textContent=c.card;
+    const td2=document.createElement('td'); td2.textContent=(c.first||'')+(c.last?(' '+c.last):'');
+    const td3=document.createElement('td');
+    const del=document.createElement('button'); del.textContent='Șterge'; del.className='button'; del.onclick=()=> removeCard(c.card);
+    td3.appendChild(del);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); body.appendChild(tr);
+  });
+}
+function loadCards(){ api('/api/cards').then(j=>{ renderCards(j.cards||[]); }).catch(()=>{}); }
+document.getElementById('btnCardsRefresh').onclick=()=> { api('/api/cards/refresh','POST',{}).then(()=>{ loadCards(); loadDbInfo(); }); };
+function removeCard(card){
+  if (!confirm('Șterge card ' + card + '?')) return;
+  api('/api/cards/remove','POST',{ card: Number(card) }).then(()=>{ loadCards(); loadDbInfo(); }).catch(console.error);
+}
+document.getElementById('btnAddCard').onclick=()=>{ document.getElementById('cardPrompt').style.display='flex'; };
+document.getElementById('cardAddCancel').onclick=()=>{ document.getElementById('cardPrompt').style.display='none'; };
+// Salvare cod tastatură (Keypad master code)
+document.getElementById('saveCode').onclick = () => {
+  const current = document.getElementById('codeCurrent').value.trim();
+  const news    = document.getElementById('codeNew').value.trim();
+  const confirm = document.getElementById('codeConfirm').value.trim();
+
+  fetch('/api/code', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current: current, new: news, confirm: confirm})
+  })
+  .then(r => r.json())
+  .then(j => {
+    if (j.ok) {
+      document.getElementById('codeMsg').textContent = '✅ Cod salvat cu succes!';
+      document.getElementById('codeMsg').style.color = '#22c55e';
+      setTimeout(() => document.getElementById('codeMsg').textContent = '', 3000);
+      document.getElementById('codeCurrent').value = '';
+      document.getElementById('codeNew').value = '';
+      document.getElementById('codeConfirm').value = '';
+    } else {
+      document.getElementById('codeMsg').textContent = '❌ Eroare: ' + (j.err || 'necunoscută');
+      document.getElementById('codeMsg').style.color = '#f87171';
     }
+  })
+  .catch(e => {
+    console.error(e);
+    document.getElementById('codeMsg').textContent = '❌ Eroare conexiune';
+    document.getElementById('codeMsg').style.color = '#f87171';
+  });
+};
 
-    function lockDoor() {
-      fetch(esp_ip + "/lock")
-        .then(r => r.text())
-        .then(t => document.getElementById("status").innerText = "Ușa închisă 🔒")
-        .catch(e => document.getElementById("status").innerText = "Eroare conexiune ❌");
-    }
+// Citește informații din DB (PHP)
+function loadDbInfo(){
+  fetch(DBINFO_URL).then(r=>r.json()).then(j=>{
+    if(!j||!j.ok) return;
+    document.getElementById('dbLast').textContent     = j.last_card24 ?? '—';
+    document.getElementById('dbDistinct').textContent = j.distinct_cards ?? '—';
+    document.getElementById('dbTotal').textContent    = j.total_events ?? '—';
+    const inp=document.getElementById('cardNum'); if(inp && j.last_card24) inp.placeholder=`ultimul: ${j.last_card24}`;
+  }).catch(()=>{});
+}
+document.getElementById('cardAddOk').onclick=()=>{
+  const card=document.getElementById('cardNum').value.trim();
+  const first=document.getElementById('cardFirst').value.trim();
+  const last=document.getElementById('cardLast').value.trim();
+  if(!card){ alert('Introdu card'); return; }
+  api('/api/cards/add','POST',{ card:Number(card), first:first, last:last })
+    .then(()=>{ document.getElementById('cardPrompt').style.display='none'; loadCards(); loadDbInfo(); })
+    .catch(()=>{ alert('Eroare'); });
+};
 
-    // actualizează automat statusul conexiunii
-    setInterval(() => {
-      fetch(esp_ip + "/status")
-        .then(r => r.text())
-        .then(t => document.getElementById("status").innerText = "Status: " + t)
-        .catch(e => document.getElementById("status").innerText = "ESP offline ❌");
-    }, 5000);
-  </script>
+/* init */
+fetchInfo();
+loadSchedule();
+loadCards();
+loadDbInfo();
+loadTz();
+setInterval(()=>{ fetchInfo(); loadDbInfo(); }, 5000);
+</script>
 </body>
 </html>
