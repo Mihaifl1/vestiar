@@ -43,7 +43,7 @@ const char* PHP_DBINFO_URL   = "http://192.168.66.240/vestiar_dbinfo.php";     /
 const char* PHP_CARDS_LIST = "http://192.168.66.240/vestiar_cards_list.php"; // -> trebuie să returneze JSON array: [{ "card":12345, "first":"Ion", "last":"Pop" }, ...]
 
 // ---------- CONFIG DISPOZITIV ----------
-const int DOOR_ID = 10;
+const int DOOR_ID = 6;
 
 // Relay
 const int PIN_RELAY = 16; // D0
@@ -1308,7 +1308,9 @@ Serial.printf("\nWiFi OK, IP=%s\n", WiFi.localIP().toString().c_str());
 fetchCardsFromServer(); // ia lista inițială direct din DB
 
 // ===== OTA SETUP =====
-ArduinoOTA.setHostname("vestiar_5");   // nume personalizat (unicat)
+char hostName[32];
+sprintf(hostName, "vestiar_%d", DOOR_ID);
+ArduinoOTA.setHostname(hostName);
 ArduinoOTA.setPassword("12345");       // parolă pentru securitate (opțional)
 ArduinoOTA.onStart([]() {
   String type;
