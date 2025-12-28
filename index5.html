@@ -4,29 +4,19 @@
 <meta charset="UTF-8">
 <title>Cazan Monitor MQTT</title>
 
-<!-- MQTT.js -->
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
 <style>
 body {
     font-family: Arial, sans-serif;
     background: #f4f4f4;
-    margin: 0;
     padding: 20px;
-}
-h1 {
-    margin-bottom: 5px;
-}
-.status {
-    color: #666;
-    margin-bottom: 20px;
 }
 .card {
     background: #fff;
     padding: 20px;
     margin-bottom: 15px;
     border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 .value {
     font-size: 32px;
@@ -38,11 +28,11 @@ h1 {
 <body>
 
 <h1>🔥 Cazan Monitor</h1>
-<div class="status" id="status">Conectare la MQTT...</div>
+<div id="status">Conectare MQTT...</div>
 
 <div class="card">
-    <div>🌡 Temperatura apă</div>
-    <div class="value" id="temp">-- °C</div>
+    <div>🌡 Temperatura</div>
+    <div class="value" id="temp">--</div>
 </div>
 
 <div class="card">
@@ -50,20 +40,27 @@ h1 {
     <div class="value" id="door">--</div>
 </div>
 
+<div class="card">
+    <div>⏱ Timp de la închiderea ușii</div>
+    <div class="value" id="door_time">--</div>
+</div>
+
 <script>
-/* ================= MQTT CONFIG ================= */
 const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
 
 const topicTemp = "cazan/temperatura";
 const topicDoor = "cazan/usa";
+const topicDoorEpoch = "cazan/usa_inchisa_epoch";
 
-/* ================= CONNECT ================= */
+let doorClosedEpoch = null;
+
 const client = mqtt.connect(brokerUrl);
 
 client.on("connect", () => {
-    document.getElementById("status").innerText = "Conectat la MQTT ✅";
+    document.getElementById("status").innerText = "Conectat MQTT ✅";
     client.subscribe(topicTemp);
     client.subscribe(topicDoor);
+    client.subscribe(topicDoorEpoch);
 });
 
 client.on("message", (topic, message) => {
@@ -76,12 +73,24 @@ client.on("message", (topic, message) => {
     if (topic === topicDoor) {
         document.getElementById("door").innerText = value;
     }
+
+    if (topic === topicDoorEpoch) {
+        doorClosedEpoch = parseInt(value);
+    }
 });
 
-client.on("error", (err) => {
-    document.getElementById("status").innerText = "Eroare MQTT ❌";
-    console.error(err);
-});
+setInterval(() => {
+    if (!doorClosedEpoch) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    let diff = now - doorClosedEpoch;
+    if (diff < 0) diff = 0;
+
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+
+    document.getElementById("door_time").innerText = `${h} h ${m} min`;
+}, 1000);
 </script>
 
 </body>
