@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<title>Cazan Monitor MQTT</title>
+
+<!-- MQTT.js -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f4f4;
+    margin: 0;
+    padding: 20px;
+}
+h1 {
+    margin-bottom: 5px;
+}
+.status {
+    color: #666;
+    margin-bottom: 20px;
+}
+.card {
+    background: #fff;
+    padding: 20px;
+    margin-bottom: 15px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.value {
+    font-size: 32px;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🔥 Cazan Monitor</h1>
+<div class="status" id="status">Conectare la MQTT...</div>
+
+<div class="card">
+    <div>🌡 Temperatura apă</div>
+    <div class="value" id="temp">-- °C</div>
+</div>
+
+<div class="card">
+    <div>🚪 Ușă</div>
+    <div class="value" id="door">--</div>
+</div>
+
+<script>
+/* ================= MQTT CONFIG ================= */
+const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
+
+const topicTemp = "cazan/temperatura";
+const topicDoor = "cazan/usa";
+
+/* ================= CONNECT ================= */
+const client = mqtt.connect(brokerUrl);
+
+client.on("connect", () => {
+    document.getElementById("status").innerText = "Conectat la MQTT ✅";
+    client.subscribe(topicTemp);
+    client.subscribe(topicDoor);
+});
+
+client.on("message", (topic, message) => {
+    const value = message.toString();
+
+    if (topic === topicTemp) {
+        document.getElementById("temp").innerText = value + " °C";
+    }
+
+    if (topic === topicDoor) {
+        document.getElementById("door").innerText = value;
+    }
+});
+
+client.on("error", (err) => {
+    document.getElementById("status").innerText = "Eroare MQTT ❌";
+    console.error(err);
+});
+</script>
+
+</body>
+</html>
