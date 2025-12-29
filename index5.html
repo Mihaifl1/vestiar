@@ -286,12 +286,19 @@ client.on("message", (topic, message) => {
   }
 
   if(topic === topicDoor){
-    if(value === "1" || value.toLowerCase() === "open"){
-      elDoor.innerText = "DESCHISĂ";
-    } else {
-      elDoor.innerText = "ÎNCHISĂ";
+  if(value === "1" || value.toLowerCase() === "open"){
+    elDoor.innerText = "DESCHISĂ";
+    doorClosedEpoch = null; // reset când se deschide
+  } else {
+    elDoor.innerText = "ÎNCHISĂ";
+
+    // dacă NU vine epoch din broker, îl setăm local
+    if(!doorClosedEpoch){
+      doorClosedEpoch = Math.floor(Date.now() / 1000);
     }
   }
+}
+
 
   if(topic === topicDoorEpoch){
     doorClosedEpoch = parseInt(value, 10);
@@ -326,3 +333,4 @@ setInterval(() => {
 
 </body>
 </html>
+
