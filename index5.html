@@ -298,16 +298,29 @@ client.on("message", (topic, message) => {
   }
 });
 
-/* ===== Timers ===== */
+/* ===== TIMER CU ZILE (SINGURA MODIFICARE) ===== */
 setInterval(() => {
   updateSnoozeUI();
 
-  if(!doorClosedEpoch) return;
+  if(!doorClosedEpoch){
+    elDoorTime.innerText = "--";
+    return;
+  }
+
   const diff = Math.max(0, Math.floor(Date.now()/1000) - doorClosedEpoch);
-  const h = Math.floor(diff/3600);
-  const m = Math.floor((diff%3600)/60);
-  const s = diff%60;
-  elDoorTime.innerText = `${h} h ${m} min ${s} s`;
+
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  const seconds = diff % 60;
+
+  let text = "";
+  if(days > 0){
+    text += `${days} zi${days > 1 ? "le" : ""} `;
+  }
+  text += `${hours} h ${minutes} min ${seconds} s`;
+
+  elDoorTime.innerText = text;
 }, 1000);
 </script>
 
