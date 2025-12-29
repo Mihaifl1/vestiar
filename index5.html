@@ -1,27 +1,86 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Cazan Monitor MQTT</title>
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
 <style>
-body {
+  body{
     font-family: Arial, sans-serif;
-    background: #f4f4f4;
-    padding: 20px;
-}
-.card {
-    background: #fff;
-    padding: 20px;
-    margin-bottom: 15px;
-    border-radius: 10px;
-}
-.value {
-    font-size: 32px;
-    font-weight: bold;
-}
+    background:#f4f4f4;
+    padding:20px;
+    margin:0;
+  }
+  h1{ margin-top:0; }
+  .card{
+    background:#fff;
+    padding:20px;
+    margin-bottom:15px;
+    border-radius:10px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  }
+  .value{
+    font-size:32px;
+    font-weight:bold;
+    margin-top:8px;
+  }
+  .row{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  .row .card{ flex:1; min-width:220px; }
+  #status{
+    margin: 10px 0 16px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background:#fff;
+    display:inline-block;
+  }
+
+  /* ALERT STARE */
+  .alert-on{
+    background:#ffe3e3 !important;
+  }
+  .alert-badge{
+    display:inline-block;
+    padding:6px 10px;
+    border-radius:999px;
+    font-weight:bold;
+    font-size:14px;
+    margin-left:8px;
+  }
+  .badge-ok{ background:#e7fff0; color:#0b7a35; }
+  .badge-warn{ background:#fff1c9; color:#8a5a00; }
+  .badge-alarm{ background:#ffd0d0; color:#a40000; }
+
+  .small{
+    font-size:14px;
+    color:#666;
+    margin-top:8px;
+  }
+  input[type="range"]{
+    width:100%;
+  }
+  .btn{
+    padding:10px 14px;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:700;
+  }
+  .btn-primary{ background:#1f6feb; color:#fff; }
+  .btn-danger{ background:#d1242f; color:#fff; }
+  .btn-ghost{ background:#f0f0f0; color:#333; }
+  .btn-row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-top:12px;
+  }
 </style>
 </head>
 
@@ -29,67 +88,250 @@ body {
 
 <h1>🔥 Cazan Monitor</h1>
 <div id="status">Conectare MQTT...</div>
+<span id="badge" class="alert-badge badge-warn">NECUNOSCUT</span>
 
-<div class="card">
+<div class="row">
+  <div class="card">
     <div>🌡 Temperatura</div>
     <div class="value" id="temp">--</div>
-</div>
+    <div class="small" id="tempHint">Aștept date...</div>
+  </div>
 
-<div class="card">
+  <div class="card">
     <div>🚪 Ușă</div>
     <div class="value" id="door">--</div>
+    <div class="small" id="doorHint">Aștept date...</div>
+  </div>
 </div>
 
 <div class="card">
-    <div>⏱ Timp de la închiderea ușii</div>
-    <div class="value" id="door_time">--</div>
+  <div>⏱ Timp de la închiderea ușii</div>
+  <div class="value" id="door_time">--</div>
+</div>
+
+<div class="card">
+  <div>⚙️ Temperatură minimă (prag alarmă)</div>
+  <input type="range" id="minTemp" min="20" max="90" step="1" value="50">
+  <div class="value"><span id="minTempVal">50</span> °C</div>
+  <div class="small">
+    Dacă temperatura scade sub prag, se activează alerta (vizual + sunet).
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btnArm">🔔 Activează sunet (Arm)</button>
+    <button class="btn btn-ghost" id="btnTest">▶ Test sunet</button>
+    <button class="btn btn-danger" id="btnStop">⛔ Oprește alarma</button>
+  </div>
+
+  <div class="small" id="audioInfo">
+    Notă: pe Chrome/Android, sunetul poate porni doar după o interacțiune (click/tap) pe pagină.
+  </div>
 </div>
 
 <script>
+/* ================= MQTT ================= */
 const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
 
-const topicTemp = "cazan/temperatura";
-const topicDoor = "cazan/usa";
+const topicTemp      = "cazan/temperatura";
+const topicDoor      = "cazan/usa";
 const topicDoorEpoch = "cazan/usa_inchisa_epoch";
 
-let doorClosedEpoch = null;
+/* ================= UI refs ================= */
+const elStatus = document.getElementById("status");
+const elBadge  = document.getElementById("badge");
+const elTemp   = document.getElementById("temp");
+const elDoor   = document.getElementById("door");
+const elDoorTime = document.getElementById("door_time");
+const elMinTemp = document.getElementById("minTemp");
+const elMinTempVal = document.getElementById("minTempVal");
+const elTempHint = document.getElementById("tempHint");
+const elDoorHint = document.getElementById("doorHint");
 
-const client = mqtt.connect(brokerUrl);
+const btnArm  = document.getElementById("btnArm");
+const btnTest = document.getElementById("btnTest");
+const btnStop = document.getElementById("btnStop");
+
+/* ================= SETTINGS (persistente) ================= */
+const LS_MIN_TEMP = "cazan_min_temp";
+let minTemp = parseInt(localStorage.getItem(LS_MIN_TEMP) || "50", 10);
+if (isNaN(minTemp)) minTemp = 50;
+elMinTemp.value = String(minTemp);
+elMinTempVal.innerText = String(minTemp);
+
+/* ================= ALARM AUDIO =================
+   - Pentru a evita blocarea autoplay, cerem "Arm" (o interacțiune).
+*/
+let audioArmed = false;
+let alarmActive = false;
+
+const alarmSound = new Audio("alarm.mp3");   // pune alarm.mp3 în același folder cu index.html
+alarmSound.loop = true;                      // sunet continuu când e alarmă
+
+function setBadge(state){
+  if(state === "OK"){
+    elBadge.className = "alert-badge badge-ok";
+    elBadge.innerText = "OK";
+  } else if(state === "WARN"){
+    elBadge.className = "alert-badge badge-warn";
+    elBadge.innerText = "AȘTEPT";
+  } else if(state === "ALARM"){
+    elBadge.className = "alert-badge badge-alarm";
+    elBadge.innerText = "ALARMĂ";
+  }
+}
+
+function stopAlarm(){
+  alarmActive = false;
+  document.body.classList.remove("alert-on");
+  try { alarmSound.pause(); alarmSound.currentTime = 0; } catch(e){}
+}
+
+async function startAlarm(){
+  alarmActive = true;
+  document.body.classList.add("alert-on");
+  setBadge("ALARM");
+
+  if(!audioArmed) return; // fără arm, nu încercăm audio (ar fi blocat)
+  try{
+    await alarmSound.play();
+  }catch(e){
+    // dacă browserul blochează, rămâne alertă vizuală
+    console.log("Audio blocked:", e);
+  }
+}
+
+/* ================= MIN TEMP slider ================= */
+elMinTemp.addEventListener("input", (e) => {
+  minTemp = parseInt(e.target.value, 10);
+  elMinTempVal.innerText = String(minTemp);
+  localStorage.setItem(LS_MIN_TEMP, String(minTemp));
+});
+
+/* ================= Buttons ================= */
+btnArm.addEventListener("click", async () => {
+  audioArmed = true;
+  // încercăm un play scurt mut ca să "deblocheze" audio pe unele browsere
+  try{
+    alarmSound.volume = 0.0;
+    await alarmSound.play();
+    alarmSound.pause();
+    alarmSound.currentTime = 0;
+    alarmSound.volume = 1.0;
+  }catch(e){}
+  elStatus.innerText = "Sunet activat ✅ (Arm)";
+});
+
+btnTest.addEventListener("click", async () => {
+  audioArmed = true;
+  stopAlarm();
+  try{
+    alarmSound.loop = false;
+    await alarmSound.play();
+    setTimeout(() => {
+      alarmSound.pause();
+      alarmSound.currentTime = 0;
+      alarmSound.loop = true;
+    }, 1500);
+  }catch(e){
+    console.log("Test audio blocked:", e);
+    alert("Browserul a blocat sunetul. Apasă întâi pe 'Activează sunet (Arm)'.");
+  }
+});
+
+btnStop.addEventListener("click", () => {
+  stopAlarm();
+  setBadge("OK");
+  elStatus.innerText = "Alarmă oprită manual ✅";
+});
+
+/* ================= MQTT logic ================= */
+let doorClosedEpoch = null;
+let currentTemp = null;
+let lastDoor = null;
+
+setBadge("WARN");
+
+const client = mqtt.connect(brokerUrl, {
+  clean: true,
+  reconnectPeriod: 2000, // auto reconnect
+  connectTimeout: 10_000
+});
 
 client.on("connect", () => {
-    document.getElementById("status").innerText = "Conectat MQTT ✅";
-    client.subscribe(topicTemp);
-    client.subscribe(topicDoor);
-    client.subscribe(topicDoorEpoch);
+  elStatus.innerText = "Conectat MQTT ✅";
+  setBadge("OK");
+  client.subscribe(topicTemp);
+  client.subscribe(topicDoor);
+  client.subscribe(topicDoorEpoch);
+});
+
+client.on("reconnect", () => {
+  elStatus.innerText = "Reconectare MQTT...";
+  setBadge("WARN");
+});
+
+client.on("close", () => {
+  elStatus.innerText = "MQTT deconectat ❌";
+  setBadge("WARN");
+});
+
+client.on("error", (err) => {
+  elStatus.innerText = "Eroare MQTT ❌";
+  console.log(err);
+  setBadge("WARN");
 });
 
 client.on("message", (topic, message) => {
-    const value = message.toString();
+  const value = message.toString();
 
-    if (topic === topicTemp) {
-        document.getElementById("temp").innerText = value + " °C";
-    }
+  if (topic === topicTemp) {
+    const t = parseFloat(value);
+    if (!isNaN(t)) currentTemp = t;
 
-    if (topic === topicDoor) {
-        document.getElementById("door").innerText = value;
-    }
+    elTemp.innerText = value + " °C";
+    elTempHint.innerText = "Prag minim: " + minTemp + " °C";
 
-    if (topic === topicDoorEpoch) {
-        doorClosedEpoch = parseInt(value);
+    // verificăm pragul
+    if (currentTemp !== null && currentTemp < minTemp) {
+      elStatus.innerText = "⚠️ TEMPERATURĂ SUB PRAG!";
+      startAlarm();
+    } else {
+      // dacă a revenit peste prag, oprim alarma automat
+      if (alarmActive) {
+        stopAlarm();
+        elStatus.innerText = "Conectat MQTT ✅";
+        setBadge("OK");
+      } else {
+        setBadge("OK");
+      }
     }
+  }
+
+  if (topic === topicDoor) {
+    lastDoor = value;
+    elDoor.innerText = value;
+    elDoorHint.innerText = "Ultima stare primită.";
+  }
+
+  if (topic === topicDoorEpoch) {
+    const ep = parseInt(value, 10);
+    if (!isNaN(ep)) doorClosedEpoch = ep;
+  }
 });
 
+/* ================= Door time counter ================= */
 setInterval(() => {
-    if (!doorClosedEpoch) return;
+  if (!doorClosedEpoch) return;
 
-    const now = Math.floor(Date.now() / 1000);
-    let diff = now - doorClosedEpoch;
-    if (diff < 0) diff = 0;
+  const now = Math.floor(Date.now() / 1000);
+  let diff = now - doorClosedEpoch;
+  if (diff < 0) diff = 0;
 
-    const h = Math.floor(diff / 3600);
-    const m = Math.floor((diff % 3600) / 60);
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
 
-    document.getElementById("door_time").innerText = `${h} h ${m} min`;
+  elDoorTime.innerText = `${h} h ${m} min ${s} s`;
 }, 1000);
 </script>
 
