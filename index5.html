@@ -43,9 +43,7 @@ h1{ margin-top:0; }
   display:inline-block;
 }
 
-.alert-on{
-  background:#ffe3e3 !important;
-}
+.alert-on{ background:#ffe3e3 !important; }
 .alert-badge{
   display:inline-block;
   padding:6px 10px;
@@ -59,11 +57,7 @@ h1{ margin-top:0; }
 .badge-alarm{ background:#ffd0d0; color:#a40000; }
 .badge-snooze{ background:#e0e0ff; color:#2b2b8a; }
 
-.small{
-  font-size:14px;
-  color:#666;
-  margin-top:8px;
-}
+.small{ font-size:14px; color:#666; margin-top:8px; }
 input[type="range"]{ width:100%; }
 
 .btn{
@@ -128,12 +122,14 @@ input[type="range"]{ width:100%; }
 /* ===== MQTT ===== */
 const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
 const topicTemp = "cazan/temperatura";
+const topicDoor = "cazan/usa";
 const topicDoorEpoch = "cazan/usa_inchisa_epoch";
 
 /* ===== UI ===== */
 const elStatus = document.getElementById("status");
 const elBadge = document.getElementById("badge");
 const elTemp = document.getElementById("temp");
+const elDoor = document.getElementById("door");
 const elDoorTime = document.getElementById("door_time");
 const elMinTemp = document.getElementById("minTemp");
 const elMinTempVal = document.getElementById("minTempVal");
@@ -267,6 +263,7 @@ client.on("connect", () => {
   elStatus.innerText = "Conectat MQTT ✅";
   setBadge("OK");
   client.subscribe(topicTemp);
+  client.subscribe(topicDoor);
   client.subscribe(topicDoorEpoch);
 });
 
@@ -285,6 +282,14 @@ client.on("message", (topic, message) => {
       stopAlarm();
       setBadge("OK");
       elStatus.innerText = "Conectat MQTT ✅";
+    }
+  }
+
+  if(topic === topicDoor){
+    if(value === "1" || value.toLowerCase() === "open"){
+      elDoor.innerText = "DESCHISĂ";
+    } else {
+      elDoor.innerText = "ÎNCHISĂ";
     }
   }
 
