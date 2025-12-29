@@ -1,336 +1,402 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Cazan Monitor MQTT</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cazan Monitor MQTT</title>
 
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
-<style>
-body{
-  font-family: Arial, sans-serif;
-  background:#f4f4f4;
-  padding:20px;
-  margin:0;
-}
-h1{ margin-top:0; }
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 20px;
+      margin: 0;
+    }
 
-.card{
-  background:#fff;
-  padding:20px;
-  margin-bottom:15px;
-  border-radius:10px;
-  box-shadow:0 1px 6px rgba(0,0,0,0.08);
-}
-.value{
-  font-size:32px;
-  font-weight:bold;
-  margin-top:8px;
-}
-.row{
-  display:flex;
-  gap:12px;
-  flex-wrap:wrap;
-}
-.row .card{ flex:1; min-width:220px; }
+    h1 {
+      margin-top: 0;
+    }
 
-#status{
-  margin:10px 0 16px 0;
-  padding:10px 12px;
-  border-radius:8px;
-  background:#fff;
-  display:inline-block;
-}
+    .card {
+      background: #fff;
+      padding: 20px;
+      margin-bottom: 15px;
+      border-radius: 10px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    }
 
-.alert-on{ background:#ffe3e3 !important; }
-.alert-badge{
-  display:inline-block;
-  padding:6px 10px;
-  border-radius:999px;
-  font-weight:bold;
-  font-size:14px;
-  margin-left:8px;
-}
-.badge-ok{ background:#e7fff0; color:#0b7a35; }
-.badge-warn{ background:#fff1c9; color:#8a5a00; }
-.badge-alarm{ background:#ffd0d0; color:#a40000; }
-.badge-snooze{ background:#e0e0ff; color:#2b2b8a; }
+    .value {
+      font-size: 32px;
+      font-weight: bold;
+      margin-top: 8px;
+    }
 
-.small{ font-size:14px; color:#666; margin-top:8px; }
-input[type="range"]{ width:100%; }
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
 
-.btn{
-  padding:10px 14px;
-  border:none;
-  border-radius:10px;
-  cursor:pointer;
-  font-weight:700;
-}
-.btn-primary{ background:#1f6feb; color:#fff; }
-.btn-danger{ background:#d1242f; color:#fff; }
-.btn-ghost{ background:#f0f0f0; color:#333; }
+    .row .card {
+      flex: 1;
+      min-width: 220px;
+    }
 
-.btn-row{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top:12px;
-}
-</style>
+    #status {
+      margin: 10px 0 16px 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #fff;
+      display: inline-block;
+    }
+
+    .alert-on {
+      background: #ffe3e3 !important;
+    }
+
+    .alert-badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: bold;
+      font-size: 14px;
+      margin-left: 8px;
+    }
+
+    .badge-ok {
+      background: #e7fff0;
+      color: #0b7a35;
+    }
+
+    .badge-warn {
+      background: #fff1c9;
+      color: #8a5a00;
+    }
+
+    .badge-alarm {
+      background: #ffd0d0;
+      color: #a40000;
+    }
+
+    .badge-snooze {
+      background: #e0e0ff;
+      color: #2b2b8a;
+    }
+
+    .small {
+      font-size: 14px;
+      color: #666;
+      margin-top: 8px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .btn {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .btn-primary {
+      background: #1f6feb;
+      color: #fff;
+    }
+
+    .btn-danger {
+      background: #d1242f;
+      color: #fff;
+    }
+
+    .btn-ghost {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+  </style>
 </head>
 
 <body>
 
-<h1>🔥 Cazan Monitor</h1>
-<div id="status">Conectare MQTT...</div>
-<span id="badge" class="alert-badge badge-warn">NECUNOSCUT</span>
+  <h1>🔥 Cazan Monitor</h1>
 
-<div class="row">
-  <div class="card">
-    <div>🌡 Temperatura</div>
-    <div class="value" id="temp">--</div>
-    <div class="small" id="tempHint">Aștept date...</div>
+  <div id="status">Conectare MQTT...</div>
+  <span id="badge" class="alert-badge badge-warn">NECUNOSCUT</span>
+
+  <div class="row">
+    <div class="card">
+      <div>🌡 Temperatura</div>
+      <div class="value" id="temp">--</div>
+      <div class="small" id="tempHint">Aștept date...</div>
+    </div>
+
+    <div class="card">
+      <div>🚪 Ușă</div>
+      <div class="value" id="door">--</div>
+    </div>
   </div>
 
   <div class="card">
-    <div>🚪 Ușă</div>
-    <div class="value" id="door">--</div>
-  </div>
-</div>
-
-<div class="card">
-  <div>⏱ Timp de la închiderea ușii</div>
-  <div class="value" id="door_time">--</div>
-</div>
-
-<div class="card">
-  <div>⚙️ Temperatură minimă (5–90 °C)</div>
-  <input type="range" id="minTemp" min="5" max="90" step="1" value="5">
-  <div class="value"><span id="minTempVal">5</span> °C</div>
-
-  <div class="btn-row">
-    <button class="btn btn-primary" id="btnArm">🔔 Activează sunet</button>
-    <button class="btn btn-ghost" id="btnTest">▶ Test</button>
-    <button class="btn btn-danger" id="btnStop">⏸ Snooze 30 min</button>
+    <div>⏱ Timp de la închiderea ușii</div>
+    <div class="value" id="door_time">--</div>
   </div>
 
-  <div class="small" id="snoozeInfo">—</div>
-</div>
+  <div class="card">
+    <div>⚙️ Temperatură minimă (5–90 °C)</div>
 
-<script>
-/* ===== MQTT ===== */
-const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
-const topicTemp = "cazan/temperatura";
-const topicDoor = "cazan/usa";
-const topicDoorEpoch = "cazan/usa_inchisa_epoch";
+    <input
+      type="range"
+      id="minTemp"
+      min="5"
+      max="90"
+      step="1"
+      value="5"
+    />
 
-/* ===== UI ===== */
-const elStatus = document.getElementById("status");
-const elBadge = document.getElementById("badge");
-const elTemp = document.getElementById("temp");
-const elDoor = document.getElementById("door");
-const elDoorTime = document.getElementById("door_time");
-const elMinTemp = document.getElementById("minTemp");
-const elMinTempVal = document.getElementById("minTempVal");
-const elTempHint = document.getElementById("tempHint");
-const elSnoozeInfo = document.getElementById("snoozeInfo");
+    <div class="value">
+      <span id="minTempVal">5</span> °C
+    </div>
 
-/* ===== SETTINGS ===== */
-const LS_MIN_TEMP = "cazan_min_temp";
-const LS_SNOOZE_UNTIL = "cazan_snooze_until";
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnArm">
+        🔔 Activează sunet
+      </button>
 
-let minTemp = parseInt(localStorage.getItem(LS_MIN_TEMP) || "5", 10);
-if (isNaN(minTemp) || minTemp < 5) minTemp = 5;
+      <button class="btn btn-ghost" id="btnTest">
+        ▶ Test
+      </button>
 
-elMinTemp.value = minTemp;
-elMinTempVal.innerText = minTemp;
+      <button class="btn btn-danger" id="btnStop">
+        ⏸ Snooze 30 min
+      </button>
+    </div>
 
-/* ===== AUDIO ===== */
-let audioArmed = false;
-let alarmActive = false;
+    <div class="small" id="snoozeInfo">—</div>
+  </div>
 
-const alarmSound = new Audio("alarm.mp3");
-alarmSound.loop = true;
+  <script>
+    /* ===== MQTT ===== */
+    const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
+    const topicTemp = "cazan/temperatura";
+    const topicDoor = "cazan/usa";
+    const topicDoorEpoch = "cazan/usa_inchisa_epoch";
 
-/* ===== SNOOZE ===== */
-const SNOOZE_MINUTES = 30;
-let snoozeUntil = parseInt(localStorage.getItem(LS_SNOOZE_UNTIL) || "0", 10);
+    /* ===== UI ===== */
+    const elStatus = document.getElementById("status");
+    const elBadge = document.getElementById("badge");
+    const elTemp = document.getElementById("temp");
+    const elDoor = document.getElementById("door");
+    const elDoorTime = document.getElementById("door_time");
+    const elMinTemp = document.getElementById("minTemp");
+    const elMinTempVal = document.getElementById("minTempVal");
+    const elTempHint = document.getElementById("tempHint");
+    const elSnoozeInfo = document.getElementById("snoozeInfo");
 
-function isSnoozed(){
-  return Date.now() < snoozeUntil;
-}
+    /* ===== SETTINGS ===== */
+    const LS_MIN_TEMP = "cazan_min_temp";
+    const LS_SNOOZE_UNTIL = "cazan_snooze_until";
 
-function startSnooze(){
-  snoozeUntil = Date.now() + SNOOZE_MINUTES * 60 * 1000;
-  localStorage.setItem(LS_SNOOZE_UNTIL, snoozeUntil);
-  stopAlarm();
-  setBadge("SNOOZE");
-}
+    let minTemp = parseInt(localStorage.getItem(LS_MIN_TEMP) || "5", 10);
+    if (isNaN(minTemp) || minTemp < 5) minTemp = 5;
 
-function updateSnoozeUI(){
-  if(!isSnoozed()){
-    elSnoozeInfo.innerText = "—";
-    return;
-  }
-  const left = Math.max(0, snoozeUntil - Date.now());
-  const m = Math.floor(left / 60000);
-  const s = Math.floor((left % 60000) / 1000);
-  elSnoozeInfo.innerText = `⏸ Alarmă oprită: ${m} min ${s} s`;
-}
+    elMinTemp.value = minTemp;
+    elMinTempVal.innerText = minTemp;
 
-function setBadge(state){
-  if(state === "OK"){
-    elBadge.className = "alert-badge badge-ok";
-    elBadge.innerText = "OK";
-  } else if(state === "ALARM"){
-    elBadge.className = "alert-badge badge-alarm";
-    elBadge.innerText = "ALARMĂ";
-  } else if(state === "SNOOZE"){
-    elBadge.className = "alert-badge badge-snooze";
-    elBadge.innerText = "SNOOZE";
-  } else {
-    elBadge.className = "alert-badge badge-warn";
-    elBadge.innerText = "AȘTEPT";
-  }
-}
+    /* ===== AUDIO ===== */
+    let audioArmed = false;
+    let alarmActive = false;
 
-function stopAlarm(){
-  alarmActive = false;
-  document.body.classList.remove("alert-on");
-  alarmSound.pause();
-  alarmSound.currentTime = 0;
-}
+    const alarmSound = new Audio("alarm.mp3");
+    alarmSound.loop = true;
 
-async function startAlarm(){
-  if(alarmActive || isSnoozed()) return;
-  alarmActive = true;
-  document.body.classList.add("alert-on");
-  setBadge("ALARM");
-  if(audioArmed){
-    try{ await alarmSound.play(); }catch(e){}
-  }
-}
+    /* ===== SNOOZE ===== */
+    const SNOOZE_MINUTES = 30;
+    let snoozeUntil = parseInt(
+      localStorage.getItem(LS_SNOOZE_UNTIL) || "0",
+      10
+    );
 
-/* ===== Slider ===== */
-elMinTemp.oninput = e => {
-  minTemp = Math.max(5, parseInt(e.target.value, 10));
-  elMinTempVal.innerText = minTemp;
-  localStorage.setItem(LS_MIN_TEMP, minTemp);
-};
+    function isSnoozed() {
+      return Date.now() < snoozeUntil;
+    }
 
-/* ===== Buttons ===== */
-btnArm.onclick = async () => {
-  audioArmed = true;
-  try{
-    alarmSound.volume = 0;
-    await alarmSound.play();
-    alarmSound.pause();
-    alarmSound.currentTime = 0;
-    alarmSound.volume = 1;
-  }catch(e){}
-  elStatus.innerText = "Sunet activat ✅";
-};
+    function startSnooze() {
+      snoozeUntil = Date.now() + SNOOZE_MINUTES * 60 * 1000;
+      localStorage.setItem(LS_SNOOZE_UNTIL, snoozeUntil);
+      stopAlarm();
+      setBadge("SNOOZE");
+    }
 
-btnTest.onclick = async () => {
-  audioArmed = true;
-  try{
-    alarmSound.loop = false;
-    await alarmSound.play();
-    setTimeout(() => {
+    function updateSnoozeUI() {
+      if (!isSnoozed()) {
+        elSnoozeInfo.innerText = "—";
+        return;
+      }
+
+      const left = Math.max(0, snoozeUntil - Date.now());
+      const m = Math.floor(left / 60000);
+      const s = Math.floor((left % 60000) / 1000);
+
+      elSnoozeInfo.innerText = `⏸ Alarmă oprită: ${m} min ${s} s`;
+    }
+
+    function setBadge(state) {
+      if (state === "OK") {
+        elBadge.className = "alert-badge badge-ok";
+        elBadge.innerText = "OK";
+      } else if (state === "ALARM") {
+        elBadge.className = "alert-badge badge-alarm";
+        elBadge.innerText = "ALARMĂ";
+      } else if (state === "SNOOZE") {
+        elBadge.className = "alert-badge badge-snooze";
+        elBadge.innerText = "SNOOZE";
+      } else {
+        elBadge.className = "alert-badge badge-warn";
+        elBadge.innerText = "AȘTEPT";
+      }
+    }
+
+    function stopAlarm() {
+      alarmActive = false;
+      document.body.classList.remove("alert-on");
       alarmSound.pause();
       alarmSound.currentTime = 0;
-      alarmSound.loop = true;
-    }, 1200);
-  }catch(e){}
-};
+    }
 
-btnStop.onclick = () => {
-  startSnooze();
-  elStatus.innerText = "Alarmă oprită 30 minute";
-};
+    async function startAlarm() {
+      if (alarmActive || isSnoozed()) return;
 
-/* ===== MQTT ===== */
-let doorClosedEpoch = null;
-let currentTemp = null;
+      alarmActive = true;
+      document.body.classList.add("alert-on");
+      setBadge("ALARM");
 
-const client = mqtt.connect(brokerUrl, {
-  clean:true,
-  reconnectPeriod:2000
-});
+      if (audioArmed) {
+        try {
+          await alarmSound.play();
+        } catch (e) {}
+      }
+    }
 
-client.on("connect", () => {
-  elStatus.innerText = "Conectat MQTT ✅";
-  setBadge("OK");
-  client.subscribe(topicTemp);
-  client.subscribe(topicDoor);
-  client.subscribe(topicDoorEpoch);
-});
+    /* ===== Slider ===== */
+    elMinTemp.oninput = e => {
+      minTemp = Math.max(5, parseInt(e.target.value, 10));
+      elMinTempVal.innerText = minTemp;
+      localStorage.setItem(LS_MIN_TEMP, minTemp);
+    };
 
-client.on("message", (topic, message) => {
-  const value = message.toString();
+    /* ===== Buttons ===== */
+    btnArm.onclick = async () => {
+      audioArmed = true;
+      try {
+        alarmSound.volume = 0;
+        await alarmSound.play();
+        alarmSound.pause();
+        alarmSound.currentTime = 0;
+        alarmSound.volume = 1;
+      } catch (e) {}
+      elStatus.innerText = "Sunet activat ✅";
+    };
 
-  if(topic === topicTemp){
-    currentTemp = parseFloat(value);
-    elTemp.innerText = value + " °C";
-    elTempHint.innerText = "Prag minim: " + minTemp + " °C";
+    btnTest.onclick = async () => {
+      audioArmed = true;
+      try {
+        alarmSound.loop = false;
+        await alarmSound.play();
+        setTimeout(() => {
+          alarmSound.pause();
+          alarmSound.currentTime = 0;
+          alarmSound.loop = true;
+        }, 1200);
+      } catch (e) {}
+    };
 
-    if(currentTemp < minTemp){
-      elStatus.innerText = "⚠️ Temperatură sub prag!";
-      startAlarm();
-    } else {
-      stopAlarm();
-      setBadge("OK");
+    btnStop.onclick = () => {
+      startSnooze();
+      elStatus.innerText = "Alarmă oprită 30 minute";
+    };
+
+    /* ===== MQTT ===== */
+    let doorClosedEpoch = null;
+    let currentTemp = null;
+
+    const client = mqtt.connect(brokerUrl, {
+      clean: true,
+      reconnectPeriod: 2000
+    });
+
+    client.on("connect", () => {
       elStatus.innerText = "Conectat MQTT ✅";
-    }
-  }
+      setBadge("OK");
+      client.subscribe(topicTemp);
+      client.subscribe(topicDoor);
+      client.subscribe(topicDoorEpoch);
+    });
 
-  if(topic === topicDoor){
-  if(value === "1" || value.toLowerCase() === "open"){
-    elDoor.innerText = "DESCHISĂ";
-    doorClosedEpoch = null; // reset când se deschide
-  } else {
-    elDoor.innerText = "ÎNCHISĂ";
+    client.on("message", (topic, message) => {
+      const value = message.toString();
 
-    // dacă NU vine epoch din broker, îl setăm local
-    if(!doorClosedEpoch){
-      doorClosedEpoch = Math.floor(Date.now() / 1000);
-    }
-  }
+      if (topic === topicTemp) {
+        currentTemp = parseFloat(value);
+        elTemp.innerText = value + " °C";
+        elTempHint.innerText = "Prag minim: " + minTemp + " °C";
+
+        if (currentTemp < minTemp) {
+          elStatus.innerText = "⚠️ Temperatură sub prag!";
+          startAlarm();
+        } else {
+          stopAlarm();
+          setBadge("OK");
+          elStatus.innerText = "Conectat MQTT ✅";
+        }
+      }
+
+      if (topic === topicDoor) {
+        if (value === "1" || value.toLowerCase() === "open") {
+          elDoor.innerText = "DESCHISĂ";
+        } else {
+          elDoor.innerText = "ÎNCHISĂ";
+        }
+      }
+
+      if (topic === topicDoorEpoch) {
+        doorClosedEpoch = parseInt(value, 10);
+      }
+    });
+
+    /* ===== Timers ===== */
+    setInterval(() => {
+      updateSnoozeUI();
+
+      if (!doorClosedEpoch) return;
+
+      const diff = Math.max(0, Math.floor(Date.now()/1000) - doorClosedEpoch);
+
+const days = Math.floor(diff / 86400);
+const hours = Math.floor((diff % 86400) / 3600);
+const minutes = Math.floor((diff % 3600) / 60);
+const seconds = diff % 60;
+
+let text = "";
+if (days > 0) {
+  text += `${days} zi${days > 1 ? "le" : ""} `;
 }
+text += `${hours} h ${minutes} min ${seconds} s`;
 
+elDoorTime.innerText = text;
 
-  if(topic === topicDoorEpoch){
-    doorClosedEpoch = parseInt(value, 10);
-  }
-});
-
-/* ===== TIMER CU ZILE (SINGURA MODIFICARE) ===== */
-setInterval(() => {
-  updateSnoozeUI();
-
-  if(!doorClosedEpoch){
-    elDoorTime.innerText = "--";
-    return;
-  }
-
-  const diff = Math.max(0, Math.floor(Date.now()/1000) - doorClosedEpoch);
-
-  const days = Math.floor(diff / 86400);
-  const hours = Math.floor((diff % 86400) / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  const seconds = diff % 60;
-
-  let text = "";
-  if(days > 0){
-    text += `${days} zi${days > 1 ? "le" : ""} `;
-  }
-  text += `${hours} h ${minutes} min ${seconds} s`;
-
-  elDoorTime.innerText = text;
-}, 1000);
-</script>
+    }, 1000);
+  </script>
 
 </body>
 </html>
-
