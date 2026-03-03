@@ -24,7 +24,6 @@ header{background:#111827;padding:15px;font-size:22px;color:#60a5fa;font-weight:
 .door:active{transform:scale(.97);}
 .inchisa-incuiata{background:#16a34a;}
 .inchisa-descuiata{background:#3b82f6;}
-.deschisa-incuiata{background:#f97316;}
 .deschisa-descuiata{background:#ef4444;}
 .offline{background:#6b7280;color:#ddd;}
 
@@ -87,6 +86,7 @@ function connectMQTT(){
 
   client.on("connect",()=>{
     statusEl.textContent="🟢 Conectat";
+
     Object.values(DOORS).forEach(d=>client.subscribe(d.status));
     Object.values(ZONES).forEach(z=>client.subscribe(z.status));
   });
@@ -98,13 +98,13 @@ function connectMQTT(){
       const data=JSON.parse(payload.toString());
       const [sect,id]=topic.split("/");
       const n=parseInt(id,10);
-      const obj=(sect==="locker"?DOORS[n]:ZONES[n]);
+      const obj=DOORS[n] || ZONES[n];
       if(!obj)return;
 
       if(data.lock)obj.lock=data.lock.toUpperCase();
       if(data.door)obj.door=data.door.toUpperCase();
       obj.last=Date.now();
-      render(sect,n);
+      render(n);
     }catch(e){}
   });
 }
@@ -115,85 +115,97 @@ const doorsDiv=document.getElementById("doors");
 const zonesDiv=document.getElementById("zones");
 
 const DOORS={},ZONES={};
-const autoTimers={};  // timer separat pentru fiecare
+const autoTimers={};
 
+/* ===== VESTIAR 1-6 ===== */
 for(let i=1;i<=6;i++){
   const el=document.createElement("div");
   el.className="door offline";
   el.textContent=`Ușa ${i} ⚪ OFFLINE`;
   doorsDiv.appendChild(el);
-  DOORS[i]={el,cmd:`locker/${i}/cmd`,status:`locker/${i}/status`,last:0,lock:"LOCKED",door:"CLOSED"};
+
+  DOORS[i]={
+    el,
+    cmd:`locker/${i}/cmd`,
+    status:`locker/${i}/status`,
+    last:0,
+    lock:"LOCKED",
+    door:"CLOSED"
+  };
 }
 
-for(let i=1;i<=2;i++){
+/* ===== DEPOZIT 7-10 ===== */
+const DEPOZIT_IDS=[7,8,9,10];
+
+DEPOZIT_IDS.forEach(id=>{
   const el=document.createElement("div");
   el.className="door offline";
-  el.textContent=`Zona ${i} ⚪ OFFLINE`;
+  el.textContent=`Zona ${id} ⚪ OFFLINE`;
   zonesDiv.appendChild(el);
-  ZONES[i]={el,cmd:`depozit/${i}/cmd`,status:`depozit/${i}/status`,last:0,lock:"LOCKED",door:"CLOSED"};
-}
+
+  ZONES[id]={
+    el,
+    cmd:`locker/${id}/cmd`,
+    status:`locker/${id}/status`,
+    last:0,
+    lock:"LOCKED",
+    door:"CLOSED"
+  };
+});
 
 /* ================= RENDER ================= */
-function render(section,id){
-  const obj=section==="locker"?DOORS[id]:ZONES[id];
+function render(id){
+  const obj=DOORS[id] || ZONES[id];
   const el=obj.el;
   el.className="door";
 
   if(Date.now()-obj.last>OFFLINE_MS){
     el.classList.add("offline");
-    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} ⚪ OFFLINE`;
+    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} ⚪ OFFLINE`;
     return;
   }
 
-  const door=obj.door;
-  const lock=obj.lock;
-
-  if(door==="CLOSED" && lock==="LOCKED"){
+  if(obj.door==="CLOSED" && obj.lock==="LOCKED"){
     el.classList.add("inchisa-incuiata");
-    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🔒 Închisă și încuiată`;
+    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} 🔒 Închisă`;
   }
-  else if(door==="CLOSED"){
+  else if(obj.door==="CLOSED"){
     el.classList.add("inchisa-descuiata");
-    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🔓 Închisă`;
+    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} 🔓 Descuiată`;
   }
-  else if(door==="OPEN"){
+  else if(obj.door==="OPEN"){
     el.classList.add("deschisa-descuiata");
-    el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🚪 DESCHISĂ`;
+    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} 🚪 DESCHISĂ`;
     alertSound.play().catch(()=>{});
   }
 }
 
-/* ================= CLICK CU AUTOLOCK 5 SEC ================= */
-function toggle(section,id){
-  const obj=section==="locker"?DOORS[id]:ZONES[id];
-  const key=section+"_"+id;
+/* ================= CLICK AUTOLOCK 5 SEC ================= */
+function toggle(id){
+  const obj=DOORS[id] || ZONES[id];
+  const key="door_"+id;
 
   if(Date.now()-obj.last>OFFLINE_MS){
-    statusEl.textContent="⚠ Dispozitiv offline";
+    statusEl.textContent="⚠ Offline";
     return;
   }
 
-  // anulăm timer existent
-  if(autoTimers[key]){
-    clearTimeout(autoTimers[key]);
-  }
+  if(autoTimers[key]) clearTimeout(autoTimers[key]);
 
-  // trimitem UNLOCK
   client.publish(obj.cmd,"UNLOCK");
-  statusEl.textContent=`🔓 Deschis 5 sec → ${section} ${id}`;
+  statusEl.textContent=`🔓 Deschis 5 sec → locker ${id}`;
 
-  // programăm LOCK după 5 secunde
   autoTimers[key]=setTimeout(()=>{
       client.publish(obj.cmd,"LOCK");
-      statusEl.textContent=`🔒 Închis automat → ${section} ${id}`;
+      statusEl.textContent=`🔒 Închis automat → locker ${id}`;
   },5000);
 }
 
 Object.keys(DOORS).forEach(k=>{
-  DOORS[k].el.onclick=()=>toggle("locker",k);
+  DOORS[k].el.onclick=()=>toggle(k);
 });
 Object.keys(ZONES).forEach(k=>{
-  ZONES[k].el.onclick=()=>toggle("depozit",k);
+  ZONES[k].el.onclick=()=>toggle(k);
 });
 
 /* ================= AUTO REFRESH ================= */
@@ -201,8 +213,8 @@ setInterval(()=>{
   if(!client || client.disconnected){
     connectMQTT();
   }else{
-    Object.keys(DOORS).forEach(i=>render("locker",i));
-    Object.keys(ZONES).forEach(i=>render("depozit",i));
+    Object.keys(DOORS).forEach(i=>render(i));
+    Object.keys(ZONES).forEach(i=>render(i));
   }
 },5000);
 
