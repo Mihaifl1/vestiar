@@ -7,54 +7,21 @@
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
 <style>
-body{
-  margin:0;
-  background:#0b1220;
-  color:white;
-  font-family:Arial,sans-serif;
-  text-align:center;
-}
-header{
-  background:#111827;
-  padding:15px;
-  font-size:22px;
-  color:#60a5fa;
-  font-weight:bold;
-}
-.tabs{
-  display:flex;
-  justify-content:center;
-  background:#1e293b;
-}
-.tab{
-  flex:1;
-  padding:14px;
-  cursor:pointer;
-  font-weight:bold;
-  color:#9ca3af;
-}
-.tab.active{
-  color:#fff;
-  background:#2563eb;
-}
+body{margin:0;background:#0b1220;color:white;font-family:Arial;text-align:center;}
+header{background:#111827;padding:15px;font-size:22px;color:#60a5fa;font-weight:bold;}
+.tabs{display:flex;background:#1e293b;}
+.tab{flex:1;padding:14px;cursor:pointer;font-weight:bold;color:#9ca3af;}
+.tab.active{color:#fff;background:#2563eb;}
 .tab-content{display:none;padding:20px;}
 .tab-content.active{display:block;}
-
-#status{font-size:14px;margin:10px 0;opacity:.85;}
+#status{margin:10px 0;font-size:14px;opacity:.9;}
 
 .door{
-  width:90%;
-  max-width:320px;
-  margin:12px auto;
-  padding:16px;
-  border-radius:12px;
-  font-size:18px;
-  font-weight:bold;
-  cursor:pointer;
-  transition:.2s;
+  width:90%;max-width:320px;margin:12px auto;padding:16px;
+  border-radius:12px;font-size:18px;font-weight:bold;
+  cursor:pointer;transition:.2s;
 }
 .door:active{transform:scale(.97);}
-
 .inchisa-incuiata{background:#16a34a;}
 .inchisa-descuiata{background:#3b82f6;}
 .deschisa-incuiata{background:#f97316;}
@@ -62,14 +29,9 @@ header{
 .offline{background:#6b7280;color:#ddd;}
 
 #updateBtn{
-  margin-top:20px;
-  background:#2563eb;
-  color:white;
-  font-weight:bold;
-  border:none;
-  padding:12px 24px;
-  border-radius:10px;
-  cursor:pointer;
+  margin-top:20px;background:#2563eb;color:white;
+  border:none;padding:12px 24px;border-radius:10px;
+  font-weight:bold;cursor:pointer;
 }
 #updateBtn:hover{background:#1d4ed8;}
 </style>
@@ -83,7 +45,7 @@ header{
   <div class="tab" id="tab-depozit">Depozit</div>
 </div>
 
-<div id="status">🔌 Se conectează la broker...</div>
+<div id="status">🔌 Conectare...</div>
 
 <div class="tab-content active" id="content-vestiar">
   <div id="doors"></div>
@@ -123,8 +85,6 @@ function connectMQTT(){
     reconnectPeriod:2000
   });
 
-  statusEl.textContent="🔌 Conectare...";
-
   client.on("connect",()=>{
     statusEl.textContent="🟢 Conectat";
     Object.values(DOORS).forEach(d=>client.subscribe(d.status));
@@ -143,7 +103,6 @@ function connectMQTT(){
 
       if(data.lock)obj.lock=data.lock.toUpperCase();
       if(data.door)obj.door=data.door.toUpperCase();
-
       obj.last=Date.now();
       render(sect,n);
     }catch(e){}
@@ -156,6 +115,7 @@ const doorsDiv=document.getElementById("doors");
 const zonesDiv=document.getElementById("zones");
 
 const DOORS={},ZONES={};
+const autoTimers={};  // timer separat pentru fiecare
 
 for(let i=1;i<=6;i++){
   const el=document.createElement("div");
@@ -174,12 +134,9 @@ for(let i=1;i<=2;i++){
 }
 
 /* ================= RENDER ================= */
-let lastAlertPlayed=false;
-
 function render(section,id){
   const obj=section==="locker"?DOORS[id]:ZONES[id];
   const el=obj.el;
-
   el.className="door";
 
   if(Date.now()-obj.last>OFFLINE_MS){
@@ -194,35 +151,42 @@ function render(section,id){
   if(door==="CLOSED" && lock==="LOCKED"){
     el.classList.add("inchisa-incuiata");
     el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🔒 Închisă și încuiată`;
-    lastAlertPlayed=false;
   }
-  else if(door==="CLOSED" && lock!=="LOCKED"){
+  else if(door==="CLOSED"){
     el.classList.add("inchisa-descuiata");
     el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🔓 Închisă`;
   }
   else if(door==="OPEN"){
     el.classList.add("deschisa-descuiata");
     el.textContent=`${section==="locker"?"Ușa":"Zona"} ${id} 🚪 DESCHISĂ`;
-
-    if(!lastAlertPlayed){
-      alertSound.play().catch(()=>{});
-      lastAlertPlayed=true;
-    }
+    alertSound.play().catch(()=>{});
   }
 }
 
-/* ================= CLICK ================= */
+/* ================= CLICK CU AUTOLOCK 5 SEC ================= */
 function toggle(section,id){
   const obj=section==="locker"?DOORS[id]:ZONES[id];
+  const key=section+"_"+id;
 
   if(Date.now()-obj.last>OFFLINE_MS){
     statusEl.textContent="⚠ Dispozitiv offline";
     return;
   }
 
-  // Trimite DOAR UNLOCK (ESP face auto-lock 5 sec)
+  // anulăm timer existent
+  if(autoTimers[key]){
+    clearTimeout(autoTimers[key]);
+  }
+
+  // trimitem UNLOCK
   client.publish(obj.cmd,"UNLOCK");
-  statusEl.textContent=`🔓 Deschidere 5 sec → ${section} ${id}`;
+  statusEl.textContent=`🔓 Deschis 5 sec → ${section} ${id}`;
+
+  // programăm LOCK după 5 secunde
+  autoTimers[key]=setTimeout(()=>{
+      client.publish(obj.cmd,"LOCK");
+      statusEl.textContent=`🔒 Închis automat → ${section} ${id}`;
+  },5000);
 }
 
 Object.keys(DOORS).forEach(k=>{
