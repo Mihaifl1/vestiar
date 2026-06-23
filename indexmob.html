@@ -14,7 +14,22 @@ header{background:#111827;padding:15px;font-size:22px;color:#60a5fa;font-weight:
 .tab.active{color:#fff;background:#2563eb;}
 .tab-content{display:none;padding:20px;}
 .tab-content.active{display:block;}
-#status{margin:10px 0;font-size:14px;opacity:.9;}
+
+#status{
+  margin:10px auto;
+  max-width:420px;
+  padding:10px 14px;
+  font-size:14px;
+  border-radius:10px;
+  background:#1e293b;
+  transition:background .2s,color .2s;
+}
+#status[data-state="connecting"]{color:#93c5fd;background:#1e3a5f;}
+#status[data-state="connected"]{color:#86efac;background:#14532d;}
+#status[data-state="reconnecting"]{color:#fde047;background:#713f12;}
+#status[data-state="disconnected"]{color:#fca5a5;background:#7f1d1d;}
+#status[data-state="offline"]{color:#d1d5db;background:#374151;}
+#status[data-state="error"]{color:#fdba74;background:#7c2d12;}
 
 .door{
   width:90%;max-width:320px;margin:12px auto;padding:16px;
@@ -33,6 +48,7 @@ header{background:#111827;padding:15px;font-size:22px;color:#60a5fa;font-weight:
   font-weight:bold;cursor:pointer;
 }
 #updateBtn:hover{background:#1d4ed8;}
+#updateBtn:disabled{opacity:.55;cursor:wait;}
 </style>
 </head>
 <body>
@@ -44,11 +60,11 @@ header{background:#111827;padding:15px;font-size:22px;color:#60a5fa;font-weight:
   <div class="tab" id="tab-depozit">Depozit</div>
 </div>
 
-<div id="status">🔌 Conectare...</div>
+<div id="status" data-state="connecting">🔌 Conectare la broker...</div>
 
 <div class="tab-content active" id="content-vestiar">
   <div id="doors"></div>
-  <button id="updateBtn">🔄 UPDATE</button>
+  <button id="updateBtn" type="button">🔄 RECONECTARE</button>
 </div>
 
 <div class="tab-content" id="content-depozit">
@@ -69,159 +85,263 @@ function switchTab(tab){
 document.getElementById("tab-vestiar").onclick=()=>switchTab("vestiar");
 document.getElementById("tab-depozit").onclick=()=>switchTab("depozit");
 
-/* ================= MQTT ================= */
-const brokerUrl="wss://broker.emqx.io:8084/mqtt";
-let client=null;
-const statusEl=document.getElementById("status");
-const OFFLINE_MS=20000;
-const alertSound=document.getElementById("alertSound");
+/* ================= MQTT – conectare stabilă ================= */
+const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
+const statusEl = document.getElementById("status");
+const updateBtn = document.getElementById("updateBtn");
+const OFFLINE_MS = 20000;
+const alertSound = document.getElementById("alertSound");
 
-function connectMQTT(){
-  if(client){ try{client.end(true);}catch(e){} }
+const CONN = {
+  CONNECTING: "connecting",
+  CONNECTED: "connected",
+  RECONNECTING: "reconnecting",
+  DISCONNECTED: "disconnected",
+  OFFLINE: "offline",
+  ERROR: "error"
+};
 
-  client=mqtt.connect(brokerUrl,{
-    clientId:"web_"+Math.random().toString(16).slice(2),
-    reconnectPeriod:2000
-  });
+let client = null;
+let connecting = false;
+let reconnectAttempt = 0;
+let connectStartedAt = 0;
 
-  client.on("connect",()=>{
-    statusEl.textContent="🟢 Conectat";
-
-    Object.values(DOORS).forEach(d=>client.subscribe(d.status));
-    Object.values(ZONES).forEach(z=>client.subscribe(z.status));
-  });
-
-  client.on("close",()=>statusEl.textContent="🔴 Deconectat");
-
-  client.on("message",(topic,payload)=>{
-    try{
-      const data=JSON.parse(payload.toString());
-      const [sect,id]=topic.split("/");
-      const n=parseInt(id,10);
-      const obj=DOORS[n] || ZONES[n];
-      if(!obj)return;
-
-      if(data.lock)obj.lock=data.lock.toUpperCase();
-      if(data.door)obj.door=data.door.toUpperCase();
-      obj.last=Date.now();
-      render(n);
-    }catch(e){}
-  });
+function setConnStatus(text, state){
+  statusEl.textContent = text;
+  statusEl.dataset.state = state;
 }
-connectMQTT();
+
+function subscribeAll(){
+  if(!client || !client.connected) return;
+  Object.values(DOORS).forEach(d => client.subscribe(d.status));
+  Object.values(ZONES).forEach(z => client.subscribe(z.status));
+}
+
+function onMqttMessage(topic, payload){
+  try{
+    const data = JSON.parse(payload.toString());
+    const parts = topic.split("/");
+    if(parts.length < 2) return;
+    const n = parseInt(parts[1], 10);
+    const obj = DOORS[n] || ZONES[n];
+    if(!obj) return;
+
+    if(data.lock) obj.lock = String(data.lock).toUpperCase();
+    if(data.door) obj.door = String(data.door).toUpperCase();
+    obj.last = Date.now();
+    render(n);
+  }catch(e){}
+}
+
+function attachClientHandlers(){
+  client.on("connect", () => {
+    connecting = false;
+    reconnectAttempt = 0;
+    updateBtn.disabled = false;
+    setConnStatus("🟢 Conectat — primește statusuri live", CONN.CONNECTED);
+    subscribeAll();
+  });
+
+  client.on("reconnect", () => {
+    connecting = true;
+    reconnectAttempt += 1;
+    updateBtn.disabled = true;
+    setConnStatus(
+      `🟡 Reconectare automată (${reconnectAttempt})...`,
+      CONN.RECONNECTING
+    );
+  });
+
+  client.on("close", () => {
+    connecting = false;
+    updateBtn.disabled = false;
+    if(statusEl.dataset.state !== CONN.CONNECTING){
+      setConnStatus("🔴 Deconectat — reîncerc în câteva secunde", CONN.DISCONNECTED);
+    }
+  });
+
+  client.on("offline", () => {
+    updateBtn.disabled = false;
+    setConnStatus("⚪ Fără rețea — aștept conexiunea", CONN.OFFLINE);
+  });
+
+  client.on("error", (err) => {
+    connecting = false;
+    updateBtn.disabled = false;
+    const msg = err && err.message ? err.message : "eroare MQTT";
+    setConnStatus("⚠️ Eroare: " + msg, CONN.ERROR);
+  });
+
+  client.on("message", onMqttMessage);
+}
+
+function destroyClient(){
+  if(!client) return;
+  try{
+    client.removeAllListeners();
+    client.end(true);
+  }catch(e){}
+  client = null;
+}
+
+function connectMQTT(manual){
+  if(connecting) return;
+  if(client && client.connected){
+    if(manual) setConnStatus("🟢 Deja conectat", CONN.CONNECTED);
+    return;
+  }
+
+  connecting = true;
+  connectStartedAt = Date.now();
+  updateBtn.disabled = true;
+  setConnStatus(
+    manual ? "🔄 Reconectare manuală..." : "🔌 Conectare la broker...",
+    CONN.CONNECTING
+  );
+
+  destroyClient();
+
+  client = mqtt.connect(brokerUrl, {
+    clientId: "web_" + Math.random().toString(16).slice(2),
+    reconnectPeriod: 3000,
+    connectTimeout: 12000,
+    resubscribe: true,
+    keepalive: 30,
+    clean: true
+  });
+
+  attachClientHandlers();
+
+  setTimeout(() => {
+    if(connecting && client && !client.connected){
+      connecting = false;
+      updateBtn.disabled = false;
+      setConnStatus("⏱️ Timeout conectare — apasă RECONECTARE", CONN.ERROR);
+    }
+  }, 13000);
+}
+
+function forceReconnect(){
+  if(connecting) return;
+  reconnectAttempt = 0;
+  destroyClient();
+  connectMQTT(true);
+}
+
+function publishCmd(obj, cmd){
+  if(!client || !client.connected){
+    setConnStatus("⚠️ Nu sunt conectat — apasă RECONECTARE", CONN.DISCONNECTED);
+    return false;
+  }
+  client.publish(obj.cmd, cmd);
+  return true;
+}
+
+connectMQTT(false);
 
 /* ================= ELEMENTE ================= */
-const doorsDiv=document.getElementById("doors");
-const zonesDiv=document.getElementById("zones");
+const doorsDiv = document.getElementById("doors");
+const zonesDiv = document.getElementById("zones");
 
-const DOORS={},ZONES={};
-const autoTimers={};
+const DOORS = {}, ZONES = {};
+const autoTimers = {};
 
-/* ===== VESTIAR 1-6 ===== */
-for(let i=1;i<=6;i++){
-  const el=document.createElement("div");
-  el.className="door offline";
-  el.textContent=`Ușa ${i} ⚪ OFFLINE`;
+for(let i = 1; i <= 6; i++){
+  const el = document.createElement("div");
+  el.className = "door offline";
+  el.textContent = `Ușa ${i} ⚪ OFFLINE`;
   doorsDiv.appendChild(el);
 
-  DOORS[i]={
+  DOORS[i] = {
     el,
-    cmd:`locker/${i}/cmd`,
-    status:`locker/${i}/status`,
-    last:0,
-    lock:"LOCKED",
-    door:"CLOSED"
+    cmd: `locker/${i}/cmd`,
+    status: `locker/${i}/status`,
+    last: 0,
+    lock: "LOCKED",
+    door: "CLOSED"
   };
 }
 
-/* ===== DEPOZIT 7-10 ===== */
-const DEPOZIT_IDS=[7,8,9,10];
-
-DEPOZIT_IDS.forEach(id=>{
-  const el=document.createElement("div");
-  el.className="door offline";
-  el.textContent=`Zona ${id} ⚪ OFFLINE`;
+[7, 8, 9, 10].forEach(id => {
+  const el = document.createElement("div");
+  el.className = "door offline";
+  el.textContent = `Zona ${id} ⚪ OFFLINE`;
   zonesDiv.appendChild(el);
 
-  ZONES[id]={
+  ZONES[id] = {
     el,
-    cmd:`locker/${id}/cmd`,
-    status:`locker/${id}/status`,
-    last:0,
-    lock:"LOCKED",
-    door:"CLOSED"
+    cmd: `locker/${id}/cmd`,
+    status: `locker/${id}/status`,
+    last: 0,
+    lock: "LOCKED",
+    door: "CLOSED"
   };
 });
 
 /* ================= RENDER ================= */
 function render(id){
-  const obj=DOORS[id] || ZONES[id];
-  const el=obj.el;
-  el.className="door";
+  const obj = DOORS[id] || ZONES[id];
+  const el = obj.el;
+  const label = DOORS[id] ? "Ușa" : "Zona";
+  el.className = "door";
 
-  if(Date.now()-obj.last>OFFLINE_MS){
+  if(Date.now() - obj.last > OFFLINE_MS){
     el.classList.add("offline");
-    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} ⚪ OFFLINE`;
+    el.textContent = `${label} ${id} ⚪ OFFLINE`;
     return;
   }
 
-  if(obj.door==="CLOSED" && obj.lock==="LOCKED"){
+  if(obj.door === "CLOSED" && obj.lock === "LOCKED"){
     el.classList.add("inchisa-incuiata");
-    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} 🔒 Închisă`;
-  }
-  else if(obj.door==="CLOSED"){
+    el.textContent = `${label} ${id} 🔒 Închisă`;
+  } else if(obj.door === "CLOSED"){
     el.classList.add("inchisa-descuiata");
-    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} 🔓 Descuiată`;
-  }
-  else if(obj.door==="OPEN"){
+    el.textContent = `${label} ${id} 🔓 Descuiată`;
+  } else if(obj.door === "OPEN"){
     el.classList.add("deschisa-descuiata");
-    el.textContent=`${DOORS[id]?"Ușa":"Zona"} ${id} 🚪 DESCHISĂ`;
-    alertSound.play().catch(()=>{});
+    el.textContent = `${label} ${id} 🚪 DESCHISĂ`;
+    alertSound.play().catch(() => {});
   }
 }
 
 /* ================= CLICK AUTOLOCK 5 SEC ================= */
 function toggle(id){
-  const obj=DOORS[id] || ZONES[id];
-  const key="door_"+id;
+  const obj = DOORS[id] || ZONES[id];
+  const key = "door_" + id;
 
-  if(Date.now()-obj.last>OFFLINE_MS){
-    statusEl.textContent="⚠ Offline";
+  if(Date.now() - obj.last > OFFLINE_MS){
+    setConnStatus(`⚠️ ${DOORS[id] ? "Ușa" : "Zona"} ${id} offline`, CONN.DISCONNECTED);
     return;
   }
 
   if(autoTimers[key]) clearTimeout(autoTimers[key]);
 
-  client.publish(obj.cmd,"UNLOCK");
-  statusEl.textContent=`🔓 Deschis 5 sec → locker ${id}`;
+  if(!publishCmd(obj, "UNLOCK")) return;
+  setConnStatus(`🔓 Deschis 5 sec → locker ${id}`, CONN.CONNECTED);
 
-  autoTimers[key]=setTimeout(()=>{
-      client.publish(obj.cmd,"LOCK");
-      statusEl.textContent=`🔒 Închis automat → locker ${id}`;
-  },5000);
+  autoTimers[key] = setTimeout(() => {
+    if(publishCmd(obj, "LOCK")){
+      setConnStatus(`🔒 Închis automat → locker ${id}`, CONN.CONNECTED);
+    }
+  }, 5000);
 }
 
-Object.keys(DOORS).forEach(k=>{
-  DOORS[k].el.onclick=()=>toggle(k);
-});
-Object.keys(ZONES).forEach(k=>{
-  ZONES[k].el.onclick=()=>toggle(k);
-});
+Object.keys(DOORS).forEach(k => { DOORS[k].el.onclick = () => toggle(Number(k)); });
+Object.keys(ZONES).forEach(k => { ZONES[k].el.onclick = () => toggle(Number(k)); });
 
-/* ================= AUTO REFRESH ================= */
-setInterval(()=>{
-  if(!client || client.disconnected){
-    connectMQTT();
-  }else{
-    Object.keys(DOORS).forEach(i=>render(i));
-    Object.keys(ZONES).forEach(i=>render(i));
+/* Doar refresh UI – fără reconectări în buclă (înghețau pagina) */
+setInterval(() => {
+  Object.keys(DOORS).forEach(i => render(Number(i)));
+  Object.keys(ZONES).forEach(i => render(Number(i)));
+}, 2000);
+
+updateBtn.onclick = forceReconnect;
+
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible" && client && !client.connected && !connecting){
+    setConnStatus("👁️ Tab reactiv — verific conexiunea", CONN.RECONNECTING);
   }
-},5000);
-
-document.getElementById("updateBtn").onclick=()=>{
-  statusEl.textContent="🔄 Reconectare...";
-  connectMQTT();
-};
+});
 
 </script>
 </body>
